@@ -40,4 +40,9 @@ The app requests read-only calendar permission. Google calendars already synchro
 - Tap the Earth in the geocentric dial to return.
 - Drag the Earth hand/year dial or Moon in the geocentric view to scrub time.
 - Tap the top-left menu for clock, hemisphere, galactic view, and calendar selection.
+- **DAILY HELIOCENTRIC WALLPAPER** renders the current heliocentric dial without app controls, applies it to the home screen, and refreshes it shortly after local midnight each day. Turn the switch off to cancel future updates.
 - Tap **RESET CURRENT TIME** after scrubbing.
+
+## Daily wallpaper
+
+Wallpaper updates use Android's system wallpaper API and persistent WorkManager scheduling. The frame is rendered locally at the device's full display resolution; it does not require storage or network access. Android may defer the midnight refresh slightly to honor background battery policy.

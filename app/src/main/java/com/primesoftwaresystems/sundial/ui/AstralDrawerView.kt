@@ -26,6 +26,7 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     private val clockSwitch = controlSwitch("CLOCK")
     private val galacticSwitch = controlSwitch("GALACTIC AXIS")
     private val hemisphereSwitch = controlSwitch("SOUTHERN HEMISPHERE")
+    private val wallpaperSwitch = controlSwitch("DAILY HELIOCENTRIC WALLPAPER")
     private val calendarContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val selectedCalendarIds = linkedSetOf<Long>()
     private var syncing = false
@@ -33,6 +34,7 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     var onClockChanged: ((Boolean) -> Unit)? = null
     var onGalacticChanged: ((Boolean) -> Unit)? = null
     var onHemisphereChanged: ((Boolean) -> Unit)? = null
+    var onDailyWallpaperChanged: ((Boolean) -> Unit)? = null
     var onResetNow: (() -> Unit)? = null
     var onQuit: (() -> Unit)? = null
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
@@ -52,6 +54,7 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
         content.addView(clockSwitch)
         content.addView(galacticSwitch)
         content.addView(hemisphereSwitch)
+        content.addView(wallpaperSwitch)
         content.addView(action("RETURN TO NOW", "Reset the instrument to the current date and time") { onResetNow?.invoke() })
         content.addView(section("GOOGLE CALENDAR"))
         content.addView(calendarContainer)
@@ -61,14 +64,16 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
         clockSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onClockChanged?.invoke(checked) }
         galacticSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onGalacticChanged?.invoke(checked) }
         hemisphereSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onHemisphereChanged?.invoke(checked) }
+        wallpaperSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onDailyWallpaperChanged?.invoke(checked) }
         showCalendarMessage("Loading synced calendars…")
     }
 
-    fun syncControls(view: SundialView) {
+    fun syncControls(view: SundialView, dailyWallpaperEnabled: Boolean = wallpaperSwitch.isChecked) {
         syncing = true
         clockSwitch.isChecked = view.isClockVisible
         galacticSwitch.isChecked = view.isGalacticVisible
         hemisphereSwitch.isChecked = view.isSouthernHemisphere
+        wallpaperSwitch.isChecked = dailyWallpaperEnabled
         syncing = false
     }
 

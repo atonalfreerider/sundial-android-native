@@ -44,6 +44,7 @@ android {
 
 dependencies {
     implementation("androidx.drawerlayout:drawerlayout:1.2.0")
+    implementation("androidx.work:work-runtime:2.11.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")

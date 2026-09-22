@@ -1,16 +1,20 @@
 package com.primesoftwaresystems.sundial
 
 import android.content.Intent
+import android.graphics.Color
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
+import com.primesoftwaresystems.sundial.ui.SundialView
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.Instant
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityLaunchTest {
@@ -26,6 +30,24 @@ class MainActivityLaunchTest {
                 drawer.openDrawer(GravityCompat.START, false)
                 assertTrue("Native settings drawer must open", drawer.isDrawerOpen(GravityCompat.START))
                 drawer.closeDrawer(GravityCompat.START, false)
+            }
+        }
+    }
+
+    @Test fun wallpaperFrameRendersHeliocentricViewWithoutApplicationChrome() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val bitmap = SundialView(context).renderWallpaperBitmap(
+                360,
+                800,
+                Instant.parse("2024-02-29T12:00:00Z"),
+            )
+            try {
+                assertEquals(Color.BLACK, bitmap.getPixel(12, 12))
+                val sun = bitmap.getPixel(180, (800 * .47f).toInt())
+                assertTrue("Wallpaper Sun should be luminous", Color.red(sun) > 160)
+            } finally {
+                bitmap.recycle()
             }
         }
     }

@@ -2,6 +2,7 @@ package com.primesoftwaresystems.sundial.ui
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
@@ -49,6 +50,7 @@ class SundialView(context: Context) : View(context) {
     private var north = true
     private var realtime = true
     private var running = true
+    private var wallpaperMode = false
     private var selectedInstant: Instant = Instant.now()
     private var dragMode = DragMode.NONE
     private val selectedCalendarIds = linkedSetOf<Long>()
@@ -103,8 +105,26 @@ class SundialView(context: Context) : View(context) {
             ViewState.GEOCENTRIC -> drawGeocentric(canvas)
             ViewState.GALACTIC -> drawGalactic(canvas)
         }
-        drawChrome(canvas)
-        if (running) postInvalidateDelayed(if (showClock) 250L else 1_000L)
+        if (!wallpaperMode) drawChrome(canvas)
+        if (running && !wallpaperMode) postInvalidateDelayed(if (showClock) 250L else 1_000L)
+    }
+
+    /** Renders the same heliocentric instrument without interactive application chrome. Main thread only. */
+    fun renderWallpaperBitmap(widthPx: Int, heightPx: Int, instant: Instant = Instant.now()): Bitmap {
+        require(widthPx > 0 && heightPx > 0)
+        state = ViewState.HELIOCENTRIC
+        selectedInstant = instant
+        realtime = false
+        running = false
+        wallpaperMode = true
+        measure(
+            MeasureSpec.makeMeasureSpec(widthPx, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(heightPx, MeasureSpec.EXACTLY),
+        )
+        layout(0, 0, widthPx, heightPx)
+        return Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888).also {
+            draw(Canvas(it))
+        }
     }
 
     private fun geometry(): Triple<Float, Float, Float> {

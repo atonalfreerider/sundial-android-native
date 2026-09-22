@@ -8,11 +8,13 @@ import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.primesoftwaresystems.sundial.calendar.CalendarRepository
 import com.primesoftwaresystems.sundial.ui.AstralDrawerView
 import com.primesoftwaresystems.sundial.ui.SundialView
+import com.primesoftwaresystems.sundial.wallpaper.DailyWallpaperScheduler
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.Executors
@@ -32,7 +34,11 @@ class MainActivity : Activity() {
         sundialView = SundialView(this).apply {
             id = R.id.sundial_view
             onMenuRequested = { drawerLayout.openDrawer(GravityCompat.START) }
-            onControlsChanged = { if (::drawerView.isInitialized) drawerView.syncControls(this) }
+            onControlsChanged = {
+                if (::drawerView.isInitialized) {
+                    drawerView.syncControls(this, DailyWallpaperScheduler.isEnabled(this@MainActivity))
+                }
+            }
             onCalendarSelectionChanged = { ids -> loadOccurrences(ids) }
         }
         drawerView = AstralDrawerView(this).apply {
@@ -40,13 +46,21 @@ class MainActivity : Activity() {
             onClockChanged = { sundialView.setClockVisible(it) }
             onGalacticChanged = { sundialView.setGalacticVisible(it) }
             onHemisphereChanged = { sundialView.setSouthernHemisphere(it) }
+            onDailyWallpaperChanged = { enabled ->
+                DailyWallpaperScheduler.setEnabled(this@MainActivity, enabled)
+                Toast.makeText(
+                    this@MainActivity,
+                    if (enabled) "Daily heliocentric wallpaper enabled" else "Daily wallpaper disabled",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
             onResetNow = { sundialView.resetNow() }
             onQuit = { finishAndRemoveTask() }
             onCalendarSelectionChanged = { ids ->
                 sundialView.setSelectedCalendarIds(ids)
                 loadOccurrences(ids)
             }
-            syncControls(sundialView)
+            syncControls(sundialView, DailyWallpaperScheduler.isEnabled(this@MainActivity))
         }
         drawerLayout = DrawerLayout(this).apply {
             id = R.id.drawer_layout
@@ -62,6 +76,8 @@ class MainActivity : Activity() {
             ))
         }
         setContentView(drawerLayout)
+        DailyWallpaperScheduler.configureForRequest(this)
+        drawerView.syncControls(sundialView, DailyWallpaperScheduler.isEnabled(this))
         window.decorView.post { hideSystemBars() }
         ensureCalendarPermission()
     }
