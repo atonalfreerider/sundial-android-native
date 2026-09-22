@@ -49,6 +49,10 @@ class SundialView(context: Context) : View(context) {
     private var showClock = false
     private var north = true
     private var permissionDenied = false
+    private var menuScrollY = 0f
+    private var menuContentHeight = 0f
+    private var menuLastTouchY = 0f
+    private var menuDragging = false
     private var realtime = true
     private var running = true
     private var selectedInstant: Instant = Instant.now()
@@ -371,6 +375,9 @@ class SundialView(context: Context) : View(context) {
         white.color = Color.argb(165, 255, 255, 255); white.strokeWidth = density
         canvas.drawLine(panelWidth, 0f, panelWidth, height.toFloat(), white)
         menuRows.clear()
+        canvas.save()
+        canvas.clipRect(0f, 0f, panelWidth, height.toFloat())
+        canvas.translate(0f, -menuScrollY)
         var top = 58f * density
         top = drawMenuButton(canvas, "SHOW CLOCK", top, checked = showClock, calendarId = ACTION_CLOCK)
         top = drawMenuButton(canvas, "GALACTIC", top, checked = state == ViewState.GALACTIC, calendarId = ACTION_GALACTIC)
@@ -394,6 +401,9 @@ class SundialView(context: Context) : View(context) {
                     checked = calendar.id in selectedCalendarIds, calendarId = calendar.id, color = calendar.color)
             }
         }
+        menuContentHeight = top + 16f * density
+        menuScrollY = menuScrollY.coerceIn(0f, (menuContentHeight - height).coerceAtLeast(0f))
+        canvas.restore()
     }
 
     private fun drawMenuButton(canvas: Canvas, label: String, top: Float, checked: Boolean, calendarId: Long, color: Int = Color.WHITE): Float {
@@ -408,7 +418,7 @@ class SundialView(context: Context) : View(context) {
         text.textSize = 18f * density; text.textAlign = Paint.Align.LEFT
         canvas.drawText(label, rect.left + 34f * density, rect.centerY() + 6f * density, text)
         text.textAlign = Paint.Align.CENTER
-        menuRows += MenuRow(rect, calendarId)
+        menuRows += MenuRow(RectF(rect).apply { offset(0f, -menuScrollY) }, calendarId)
         return rect.bottom + 8f * density
     }
 
@@ -420,7 +430,11 @@ class SundialView(context: Context) : View(context) {
                     menuOpen = !menuOpen; invalidate(); return true
                 }
                 if (menuOpen) {
-                    menuRows.firstOrNull { it.bounds.contains(event.x, event.y) }?.let { activateMenuRow(it.calendarId); return true }
+                    if (event.x <= min(width * .76f, 340f * density)) {
+                        menuLastTouchY = event.y
+                        menuDragging = false
+                        return true
+                    }
                     menuOpen = false; invalidate(); return true
                 }
                 if (!realtime && event.y > height - 75f * density && event.x in width * .2f..width * .8f) {
@@ -444,12 +458,27 @@ class SundialView(context: Context) : View(context) {
                 }
                 if (state == ViewState.GALACTIC) { state = ViewState.HELIOCENTRIC; invalidate(); return true }
             }
-            MotionEvent.ACTION_MOVE -> when (dragMode) {
-                DragMode.YEAR -> updateYearDrag(event.x, event.y)
-                DragMode.MOON -> updateMoonDrag(event.x, event.y)
-                DragMode.NONE -> Unit
+            MotionEvent.ACTION_MOVE -> {
+                if (menuOpen) {
+                    val delta = menuLastTouchY - event.y
+                    if (kotlin.math.abs(delta) > density) menuDragging = true
+                    menuScrollY = (menuScrollY + delta).coerceIn(0f, (menuContentHeight - height).coerceAtLeast(0f))
+                    menuLastTouchY = event.y
+                    invalidate()
+                } else when (dragMode) {
+                    DragMode.YEAR -> updateYearDrag(event.x, event.y)
+                    DragMode.MOON -> updateMoonDrag(event.x, event.y)
+                    DragMode.NONE -> Unit
+                }
             }
-            MotionEvent.ACTION_UP -> { dragMode = DragMode.NONE; performClick() }
+            MotionEvent.ACTION_UP -> {
+                if (menuOpen && !menuDragging) {
+                    menuRows.firstOrNull { it.bounds.contains(event.x, event.y) }?.let { activateMenuRow(it.calendarId) }
+                }
+                menuDragging = false
+                dragMode = DragMode.NONE
+                performClick()
+            }
             MotionEvent.ACTION_CANCEL -> dragMode = DragMode.NONE
         }
         return true

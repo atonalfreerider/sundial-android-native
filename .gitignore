@@ -6,3 +6,4 @@
 *.jks
 *.keystore
 captures/
+/pixel10-*.png

@@ -21,8 +21,19 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        repository = CalendarRepository(this)
+        sundialView = SundialView(this).apply {
+            onCalendarSelectionChanged = { ids -> loadOccurrences(ids) }
+            onQuit = { finishAndRemoveTask() }
+        }
+        setContentView(sundialView)
+        window.decorView.post { hideSystemBars() }
+        ensureCalendarPermission()
+    }
+
+    private fun hideSystemBars() {
         if (android.os.Build.VERSION.SDK_INT >= 30) {
-            window.insetsController?.let {
+            window.decorView.windowInsetsController?.let {
                 it.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
                 it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
@@ -30,14 +41,11 @@ class MainActivity : Activity() {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = 5894
         }
+    }
 
-        repository = CalendarRepository(this)
-        sundialView = SundialView(this).apply {
-            onCalendarSelectionChanged = { ids -> loadOccurrences(ids) }
-            onQuit = { finishAndRemoveTask() }
-        }
-        setContentView(sundialView)
-        ensureCalendarPermission()
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     private fun ensureCalendarPermission() {
