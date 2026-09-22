@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -16,7 +17,6 @@ import com.primesoftwaresystems.sundial.R
 import com.primesoftwaresystems.sundial.astronomy.Astronomy
 import com.primesoftwaresystems.sundial.calendar.CalendarOccurrence
 import com.primesoftwaresystems.sundial.calendar.CalendarIntervals
-import com.primesoftwaresystems.sundial.calendar.DeviceCalendar
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -45,32 +45,27 @@ class SundialView(context: Context) : View(context) {
     private val zone: ZoneId get() = ZoneId.systemDefault()
 
     private var state = ViewState.HELIOCENTRIC
-    private var menuOpen = false
     private var showClock = false
     private var north = true
-    private var permissionDenied = false
-    private var menuScrollY = 0f
-    private var menuContentHeight = 0f
-    private var menuLastTouchY = 0f
-    private var menuDragging = false
     private var realtime = true
     private var running = true
     private var selectedInstant: Instant = Instant.now()
     private var dragMode = DragMode.NONE
-    private var calendars: List<DeviceCalendar> = emptyList()
     private val selectedCalendarIds = linkedSetOf<Long>()
     private var occurrences: List<CalendarOccurrence> = emptyList()
     private var lastReportedCalendarYear = displayedYear
     private var earthPoint = Pair(0f, 0f)
     private var moonPoint = Pair(0f, 0f)
-    private val menuRows = mutableListOf<MenuRow>()
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
-    var onQuit: (() -> Unit)? = null
+    var onMenuRequested: (() -> Unit)? = null
+    var onControlsChanged: (() -> Unit)? = null
 
     val displayedYear: Int get() = selectedInstant.atZone(zone).year
+    val isClockVisible: Boolean get() = showClock
+    val isGalacticVisible: Boolean get() = state == ViewState.GALACTIC
+    val isSouthernHemisphere: Boolean get() = !north
 
     private enum class DragMode { NONE, YEAR, MOON }
-    private data class MenuRow(val bounds: RectF, val calendarId: Long?)
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -78,24 +73,22 @@ class SundialView(context: Context) : View(context) {
         isClickable = true
     }
 
-    fun setCalendars(value: List<DeviceCalendar>) {
-        calendars = value
-        // Start with Google calendars available but opt-in, matching the Unity menu behavior.
-        invalidate()
-    }
-
     fun setCalendarOccurrences(value: List<CalendarOccurrence>) {
         occurrences = value
         invalidate()
     }
 
-    fun setCalendarPermissionDenied() {
-        permissionDenied = true
-        invalidate()
-    }
-
     fun resumeClock() { running = true; invalidate() }
     fun pauseClock() { running = false }
+    fun setClockVisible(value: Boolean) { showClock = value; invalidate() }
+    fun setGalacticVisible(value: Boolean) {
+        state = if (value) ViewState.GALACTIC else ViewState.HELIOCENTRIC
+        onControlsChanged?.invoke(); invalidate()
+    }
+    fun setSouthernHemisphere(value: Boolean) { north = !value; invalidate() }
+    fun setSelectedCalendarIds(ids: Set<Long>) {
+        selectedCalendarIds.clear(); selectedCalendarIds.addAll(ids); invalidate()
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -111,14 +104,13 @@ class SundialView(context: Context) : View(context) {
             ViewState.GALACTIC -> drawGalactic(canvas)
         }
         drawChrome(canvas)
-        if (menuOpen) drawMenu(canvas)
         if (running) postInvalidateDelayed(if (showClock) 250L else 1_000L)
     }
 
     private fun geometry(): Triple<Float, Float, Float> {
         val cx = width / 2f
-        val cy = height * if (height > width * 1.25f) 0.53f else 0.5f
-        val radius = min(width * 0.475f, height * 0.43f)
+        val cy = height * if (height > width * 1.25f) 0.47f else 0.5f
+        val radius = min(width * 0.47f, height * 0.41f)
         return Triple(cx, cy, radius)
     }
 
@@ -128,59 +120,70 @@ class SundialView(context: Context) : View(context) {
         drawSeasonCross(canvas, cx, cy, r)
         drawOrbitPaths(canvas, cx, cy, r)
         drawCalendarYearEvents(canvas, cx, cy, r)
-        drawSunBloom(canvas, cx, cy, r * 0.075f)
-        text.textSize = r * 0.105f
-        text.letterSpacingCompat(0.10f)
-        canvas.drawText("SUN:DIAL", cx, cy - r * 0.56f, text)
-        text.letterSpacingCompat(0f)
+        drawSunBloom(canvas, cx, cy, r * 0.052f)
+        text.textSize = r * 0.115f
+        canvas.drawText("S U N : D I A L", cx, cy - r * 0.62f, text)
     }
 
     private fun drawAnnualDial(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         val local = selectedInstant.atZone(zone)
         val year = local.year
         val days = Astronomy.daysInYear(year)
-        white.strokeWidth = maxOf(1.2f * density, r * 0.0038f)
+        white.strokeWidth = maxOf(1.1f * density, r * 0.0034f)
         white.color = Color.WHITE
         canvas.drawCircle(cx, cy, r, white)
+        white.color = Color.argb(75, 255, 255, 255)
+        white.strokeWidth = maxOf(.5f * density, r * .0012f)
+        canvas.drawCircle(cx, cy, r * .978f, white)
         for (dayIndex in 0 until days) {
             val date = LocalDate.ofYearDay(year, dayIndex + 1)
             val monthStart = date.dayOfMonth == 1
             val week = date.dayOfMonth % 7 == 0
-            val length = when { monthStart -> r * 0.056f; week -> r * 0.033f; else -> r * 0.020f }
+            val length = when { monthStart -> r * 0.062f; week -> r * 0.036f; else -> r * 0.019f }
             val angle = annualAngle(dayIndex.toDouble() / days)
-            drawRadialLine(canvas, cx, cy, r - length, r, angle, white)
+            white.color = if (monthStart) Color.WHITE else Color.argb(if (week) 205 else 145, 255, 255, 255)
+            white.strokeWidth = if (monthStart) r * .003f else r * .0017f
+            drawRadialLine(canvas, cx, cy, r - length, r * .995f, angle, white)
         }
-        text.textSize = r * 0.043f
+        text.textSize = r * 0.039f
         for (month in 1..12) {
             val date = LocalDate.of(year, month, 15)
             val fraction = (date.dayOfYear - 0.5) / days
-            drawRotatedText(canvas, date.month.name.take(3), cx, cy, r * 0.925f, annualAngle(fraction), text, upright = true)
+            drawRotatedText(canvas, date.month.name.take(3), cx, cy, r * 0.915f, annualAngle(fraction), text, upright = true)
         }
         val current = Astronomy.civilYearFraction(local)
-        val marker = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(190, 255, 255, 255); strokeWidth = r * .006f }
-        drawRadialLine(canvas, cx, cy, r * .12f, r * .985f, annualAngle(current), marker)
+        val marker = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(210, 255, 255, 255); strokeWidth = r * .004f }
+        drawRadialLine(canvas, cx, cy, r * .77f, r * 1.015f, annualAngle(current), marker)
+        val nowPoint = point(cx, cy, r * 1.015f, annualAngle(current))
+        fill.color = Color.WHITE
+        canvas.save()
+        canvas.rotate((annualAngle(current) + 45.0).toFloat(), nowPoint.first, nowPoint.second)
+        canvas.drawRect(nowPoint.first - r * .008f, nowPoint.second - r * .008f,
+            nowPoint.first + r * .008f, nowPoint.second + r * .008f, fill)
+        canvas.restore()
     }
 
     private fun drawSeasonCross(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(140, 255, 255, 255) }
-        for (i in -10..10) {
-            val q = i / 10f
-            canvas.drawCircle(cx, cy + q * r * .97f, r * .003f, dotPaint)
-            canvas.drawCircle(cx + q * r * .97f, cy, r * .003f, dotPaint)
+        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(100, 255, 255, 255) }
+        for (i in -12..12) {
+            val q = i / 12f
+            val size = if (i % 3 == 0) r * .0031f else r * .0018f
+            canvas.drawCircle(cx, cy + q * r * .86f, size, dotPaint)
+            canvas.drawCircle(cx + q * r * .86f, cy, size, dotPaint)
         }
-        dimText.textSize = r * .052f
-        drawRotatedText(canvas, if (north) "SPRING" else "FALL", cx, cy, r * .78f, -45.0, dimText, true)
-        drawRotatedText(canvas, if (north) "SUMMER" else "WINTER", cx, cy, r * .78f, -135.0, dimText, true)
-        drawRotatedText(canvas, if (north) "FALL" else "SPRING", cx, cy, r * .78f, 135.0, dimText, true)
-        drawRotatedText(canvas, if (north) "WINTER" else "SUMMER", cx, cy, r * .78f, 45.0, dimText, true)
+        dimText.textSize = r * .047f
+        drawRotatedText(canvas, if (north) "SPRING" else "FALL", cx, cy, r * .79f, -45.0, dimText, true)
+        drawRotatedText(canvas, if (north) "SUMMER" else "WINTER", cx, cy, r * .79f, -135.0, dimText, true)
+        drawRotatedText(canvas, if (north) "FALL" else "SPRING", cx, cy, r * .79f, 135.0, dimText, true)
+        drawRotatedText(canvas, if (north) "WINTER" else "SUMMER", cx, cy, r * .79f, 45.0, dimText, true)
     }
 
     private fun drawOrbitPaths(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         val radii = mapOf(
-            Astronomy.Body.MERCURY to r * .15f,
-            Astronomy.Body.VENUS to r * .30f,
+            Astronomy.Body.MERCURY to r * .19f,
+            Astronomy.Body.VENUS to r * .32f,
             Astronomy.Body.EARTH to r * .50f,
-            Astronomy.Body.MARS to r * .76f,
+            Astronomy.Body.MARS to r * .69f,
         )
         val colors = mapOf(
             Astronomy.Body.MERCURY to Color.rgb(110, 135, 158),
@@ -190,13 +193,21 @@ class SundialView(context: Context) : View(context) {
         )
         for (body in Astronomy.Body.entries) {
             val orbitR = radii.getValue(body)
-            val pathPaint = Paint(white).apply { color = Color.argb(if (body == Astronomy.Body.EARTH) 210 else 95, 255, 255, 255); strokeWidth = r * .0017f }
-            val sweep = if (body == Astronomy.Body.EARTH) 300f else 122f
-            canvas.drawArc(RectF(cx - orbitR, cy - orbitR, cx + orbitR, cy + orbitR), -90f, sweep, false, pathPaint)
+            val pathPaint = Paint(white).apply {
+                color = Color.argb(if (body == Astronomy.Body.EARTH) 165 else 80, 255, 255, 255)
+                strokeWidth = if (body == Astronomy.Body.EARTH) r * .0022f else r * .0015f
+                pathEffect = when (body) {
+                    Astronomy.Body.MERCURY -> DashPathEffect(floatArrayOf(r * .008f, r * .012f), 0f)
+                    Astronomy.Body.VENUS -> DashPathEffect(floatArrayOf(r * .05f, r * .018f), 0f)
+                    Astronomy.Body.EARTH -> null
+                    Astronomy.Body.MARS -> DashPathEffect(floatArrayOf(r * .12f, r * .025f), 0f)
+                }
+            }
+            canvas.drawCircle(cx, cy, orbitR, pathPaint)
             val longitude = Astronomy.heliocentricPosition(body, selectedInstant).longitudeDegrees
             val angle = if (north) 90.0 - longitude else longitude - 90.0
             val point = point(cx, cy, orbitR, angle)
-            val hand = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.getValue(body); alpha = if (body == Astronomy.Body.EARTH) 230 else 90 }
+            val hand = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.getValue(body); alpha = if (body == Astronomy.Body.EARTH) 105 else 55 }
             val handPath = Path().apply {
                 moveTo(cx - r * .008f, cy)
                 lineTo(point.first, point.second)
@@ -204,32 +215,79 @@ class SundialView(context: Context) : View(context) {
                 close()
             }
             canvas.drawPath(handPath, hand)
-            val planetRadius = when (body) {
-                Astronomy.Body.MERCURY -> r * .009f
-                Astronomy.Body.VENUS -> r * .017f
-                Astronomy.Body.EARTH -> r * .016f
-                Astronomy.Body.MARS -> r * .012f
-            }
-            val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                shader = RadialGradient(point.first, point.second, planetRadius * 2.7f,
-                    intArrayOf(Color.WHITE, colors.getValue(body), Color.TRANSPARENT), floatArrayOf(0f, .35f, 1f), Shader.TileMode.CLAMP)
-            }
-            canvas.drawCircle(point.first, point.second, planetRadius * 2.7f, glow)
+            drawPlanetGlyph(canvas, body, point.first, point.second, r)
             if (body == Astronomy.Body.EARTH) earthPoint = point
+        }
+    }
+
+    private fun drawPlanetGlyph(canvas: Canvas, body: Astronomy.Body, x: Float, y: Float, r: Float) {
+        val radius = when (body) {
+            Astronomy.Body.MERCURY -> r * .017f
+            Astronomy.Body.VENUS -> r * .026f
+            Astronomy.Body.EARTH -> r * .025f
+            Astronomy.Body.MARS -> r * .021f
+        }
+        val color = when (body) {
+            Astronomy.Body.MERCURY -> Color.rgb(150, 163, 174)
+            Astronomy.Body.VENUS -> Color.rgb(255, 218, 147)
+            Astronomy.Body.EARTH -> Color.rgb(78, 190, 235)
+            Astronomy.Body.MARS -> Color.rgb(231, 82, 62)
+        }
+        val aura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(x, y, radius * 3.2f,
+                intArrayOf(withAlpha(color, 125), withAlpha(color, 45), Color.TRANSPARENT),
+                floatArrayOf(0f, .38f, 1f), Shader.TileMode.CLAMP)
+        }
+        canvas.drawCircle(x, y, radius * 3.2f, aura)
+        fill.color = color
+        canvas.drawCircle(x, y, radius, fill)
+        when (body) {
+            Astronomy.Body.MERCURY -> {
+                val facet = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = 0xFFDCE4E8.toInt() }
+                canvas.drawPath(Path().apply {
+                    moveTo(x, y - radius * .8f); lineTo(x + radius * .62f, y)
+                    lineTo(x, y + radius * .5f); lineTo(x - radius * .48f, y); close()
+                }, facet)
+                white.color = 0xAAFFFFFF.toInt(); white.strokeWidth = r * .0013f
+                canvas.drawCircle(x, y, radius * 1.35f, white)
+            }
+            Astronomy.Body.VENUS -> {
+                fill.color = Color.BLACK
+                canvas.drawCircle(x + radius * .48f, y - radius * .12f, radius * .84f, fill)
+                white.color = 0x99FFE0A3.toInt(); white.strokeWidth = r * .0015f
+                canvas.drawCircle(x, y, radius * 1.12f, white)
+            }
+            Astronomy.Body.EARTH -> {
+                fill.color = 0xFF56A66D.toInt()
+                canvas.drawOval(RectF(x - radius * .55f, y - radius * .38f, x + radius * .1f, y + radius * .05f), fill)
+                white.color = 0xCCFFFFFF.toInt(); white.strokeWidth = r * .0015f
+                canvas.drawArc(RectF(x - radius, y - radius * .43f, x + radius, y + radius * .43f), 8f, 164f, false, white)
+                canvas.drawCircle(x, y, radius * 1.14f, white)
+            }
+            Astronomy.Body.MARS -> {
+                fill.color = 0xFF71291F.toInt()
+                canvas.drawCircle(x - radius * .2f, y - radius * .14f, radius * .24f, fill)
+                val slash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = 0xCCFFB089.toInt(); strokeWidth = radius * .2f; strokeCap = Paint.Cap.ROUND
+                }
+                canvas.drawLine(x - radius * .55f, y + radius * .45f, x + radius * .58f, y - radius * .5f, slash)
+                white.color = 0x99FF866F.toInt(); white.strokeWidth = r * .0015f
+                canvas.drawCircle(x, y, radius * 1.18f, white)
+            }
         }
     }
 
     private fun drawGeocentric(canvas: Canvas) {
         val (cx, cy, r) = geometry()
-        val hourR = r * .63f
-        val moonR = r * .88f
-        drawSprocket(canvas, cx, cy, hourR, 24, majorEvery = 1, inward = r * .045f)
-        drawSprocket(canvas, cx, cy, moonR, 30, majorEvery = 5, inward = r * .035f)
-        text.textSize = r * .042f
+        val hourR = r * .61f
+        val moonR = r * .87f
+        drawSprocket(canvas, cx, cy, hourR, 24, majorEvery = 1, inward = r * .042f)
+        drawSprocket(canvas, cx, cy, moonR, 30, majorEvery = 5, inward = r * .031f)
+        text.textSize = r * .038f
         for (hour in 0 until 24) drawRotatedText(canvas, hour.toString(), cx, cy, hourR * .91f, -90.0 + hour * 15.0, text, true)
 
         val local = selectedInstant.atZone(zone)
-        text.textSize = r * .040f
+        text.textSize = r * .037f
         for (i in 0 until 29) {
             val date = local.toLocalDate().plusDays(i.toLong())
             drawRotatedText(canvas, date.dayOfMonth.toString(), cx, cy, moonR * .94f,
@@ -237,14 +295,14 @@ class SundialView(context: Context) : View(context) {
         }
 
         // Sun stays at the top in Earth-following view, as in the original camera behavior.
-        drawSunBloom(canvas, cx, cy - r * .99f, r * .105f)
+        drawSunBloom(canvas, cx, cy - r * .97f, r * .061f)
         val sunHand = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(100, 255, 255, 255) }
         canvas.drawPath(Path().apply {
             moveTo(cx - r * .035f, cy); lineTo(cx, cy - r); lineTo(cx + r * .035f, cy); close()
         }, sunHand)
 
         drawCalendarDayEvents(canvas, cx, cy, hourR)
-        val sphereRadius = r * .42f
+        val sphereRadius = r * .365f
         val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(cx + sphereRadius * .16f, cy + sphereRadius * .24f, sphereRadius * 1.25f,
                 intArrayOf(Color.argb(160, 0, 0, 0), Color.argb(70, 0, 0, 0), Color.TRANSPARENT),
@@ -261,11 +319,7 @@ class SundialView(context: Context) : View(context) {
         val phaseAngle = Astronomy.moonPhaseDegrees(selectedInstant)
         val moonAngle = if (north) -90.0 + phaseAngle else -90.0 - phaseAngle
         moonPoint = point(cx, cy, moonR, moonAngle)
-        val moonGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = RadialGradient(moonPoint.first, moonPoint.second, r * .035f,
-                intArrayOf(Color.WHITE, Color.rgb(185, 185, 170), Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
-        }
-        canvas.drawCircle(moonPoint.first, moonPoint.second, r * .035f, moonGlow)
+        drawMoonGlyph(canvas, moonPoint.first, moonPoint.second, r * .025f, phaseAngle)
         text.textSize = r * .045f
         canvas.drawText(local.month.name.take(3), cx, cy + moonR + r * .065f, text)
     }
@@ -326,32 +380,84 @@ class SundialView(context: Context) : View(context) {
         }
     }
 
+    private fun drawMoonGlyph(canvas: Canvas, x: Float, y: Float, radius: Float, phaseDegrees: Double) {
+        val aura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(x, y, radius * 2.7f,
+                intArrayOf(0xAAFFFCE5.toInt(), 0x38D9D4B9, Color.TRANSPARENT),
+                floatArrayOf(0f, .42f, 1f), Shader.TileMode.CLAMP)
+        }
+        canvas.drawCircle(x, y, radius * 2.7f, aura)
+        fill.color = 0xFFFFFBE9.toInt()
+        canvas.drawCircle(x, y, radius, fill)
+        val illumination = (1.0 - cos(Math.toRadians(phaseDegrees))) / 2.0
+        val offset = ((illumination - .5) * radius * 1.1).toFloat()
+        fill.color = 0xFF111419.toInt()
+        canvas.drawCircle(x + offset, y - radius * .08f, radius * .82f, fill)
+        white.color = 0x99FFFFFF.toInt(); white.strokeWidth = radius * .12f
+        canvas.drawCircle(x, y, radius * 1.1f, white)
+    }
+
     private fun drawSunBloom(canvas: Canvas, x: Float, y: Float, core: Float) {
-        val glowRadius = core * 6.2f
-        val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = RadialGradient(x, y, glowRadius,
-                intArrayOf(Color.WHITE, Color.argb(235, 255, 241, 195), Color.argb(105, 255, 90, 60), Color.argb(34, 170, 30, 30), Color.TRANSPARENT),
-                floatArrayOf(0f, .12f, .32f, .62f, 1f), Shader.TileMode.CLAMP)
+        val hazeRadius = core * 7.8f
+        val haze = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(x, y, hazeRadius,
+                intArrayOf(0xF5FFFDF0.toInt(), 0xD8FFD37A.toInt(), 0x52F28B32, 0x16C85022, Color.TRANSPARENT),
+                floatArrayOf(0f, .10f, .27f, .56f, 1f), Shader.TileMode.CLAMP)
         }
-        canvas.drawCircle(x, y, glowRadius, glow)
-        val rays = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(45, 255, 220, 200); strokeWidth = maxOf(1f, core * .045f) }
-        for (i in 0 until 28) {
-            val a = i * 2 * PI / 28
-            val ray = core * (2.6f + (i % 5) * .55f)
-            canvas.drawLine(x + cos(a).toFloat() * core, y + sin(a).toFloat() * core,
-                x + cos(a).toFloat() * ray, y + sin(a).toFloat() * ray, rays)
+        canvas.drawCircle(x, y, hazeRadius, haze)
+
+        for (i in 0 until 36) {
+            val a = i * 2 * PI / 36.0
+            val length = core * when {
+                i % 9 == 0 -> 6.2f
+                i % 3 == 0 -> 4.5f
+                else -> 3.25f
+            }
+            val ray = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = if (i % 3 == 0) 0x48FFD88D else 0x28FFF4CF
+                strokeWidth = if (i % 9 == 0) maxOf(1f, core * .075f) else maxOf(.6f, core * .035f)
+                strokeCap = Paint.Cap.ROUND
+            }
+            canvas.drawLine(
+                x + cos(a).toFloat() * core * 1.08f, y + sin(a).toFloat() * core * 1.08f,
+                x + cos(a).toFloat() * length, y + sin(a).toFloat() * length, ray,
+            )
         }
-        fill.color = Color.WHITE
+
+        white.style = Paint.Style.STROKE
+        white.strokeWidth = maxOf(density * .7f, core * .06f)
+        white.color = 0x42FFD798
+        canvas.drawCircle(x, y, core * 2.7f, white)
+        white.color = 0x24FFB64C
+        canvas.drawCircle(x, y, core * 4.25f, white)
+        canvas.drawArc(RectF(x - core * 3.35f, y - core * 3.35f, x + core * 3.35f, y + core * 3.35f), -62f, 118f, false, white)
+
+        val ghostAxis = Math.toRadians(132.0)
+        listOf(3.25f to .42f, 5.1f to .24f).forEach { (distance, scale) ->
+            val gx = x + cos(ghostAxis).toFloat() * core * distance
+            val gy = y + sin(ghostAxis).toFloat() * core * distance
+            white.color = if (scale > .3f) 0x38A9E4FF else 0x28FFB86B
+            white.strokeWidth = maxOf(.6f, core * .045f)
+            canvas.drawCircle(gx, gy, core * scale, white)
+        }
+
+        fill.shader = RadialGradient(x - core * .22f, y - core * .25f, core * 1.45f,
+            intArrayOf(Color.WHITE, 0xFFFFF7D2.toInt(), 0xFFFFC65A.toInt()),
+            floatArrayOf(0f, .58f, 1f), Shader.TileMode.CLAMP)
         canvas.drawCircle(x, y, core, fill)
-        white.color = Color.argb(125, 255, 55, 70)
-        white.strokeWidth = core * .13f
-        canvas.drawCircle(x, y, core * 3.1f, white)
+        fill.shader = null
     }
 
     private fun drawChrome(canvas: Canvas) {
-        val margin = 18f * density
-        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; strokeWidth = 2.2f * density; strokeCap = Paint.Cap.ROUND }
-        for (i in 0..2) canvas.drawLine(margin, margin + i * 7f * density, margin + 25f * density, margin + i * 7f * density, line)
+        val center = 30f * density
+        fill.color = 0x16000000
+        canvas.drawCircle(center, center, 24f * density, fill)
+        white.color = 0x38FFFFFF
+        white.strokeWidth = .8f * density
+        canvas.drawCircle(center, center, 23f * density, white)
+        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; strokeWidth = 2f * density; strokeCap = Paint.Cap.ROUND }
+        for (i in -1..1) canvas.drawLine(center - 10f * density, center + i * 7f * density,
+            center + 10f * density, center + i * 7f * density, line)
         if (showClock) {
             val local = selectedInstant.atZone(zone)
             text.textSize = 24f * density
@@ -359,67 +465,13 @@ class SundialView(context: Context) : View(context) {
         }
         if (!realtime) {
             fill.color = Color.argb(220, 15, 15, 15)
-            val rect = RectF(width * .25f, height - 58f * density, width * .75f, height - 14f * density)
-            canvas.drawRoundRect(rect, 5f * density, 5f * density, fill)
+            val rect = RectF(width * .27f, height - 60f * density, width * .73f, height - 14f * density)
+            canvas.drawRoundRect(rect, 18f * density, 18f * density, fill)
             white.color = Color.WHITE; white.strokeWidth = density
-            canvas.drawRoundRect(rect, 5f * density, 5f * density, white)
-            text.textSize = 18f * density
+            canvas.drawRoundRect(rect, 18f * density, 18f * density, white)
+            text.textSize = 15f * density
             canvas.drawText("RESET CURRENT TIME", width / 2f, height - 29f * density, text)
         }
-    }
-
-    private fun drawMenu(canvas: Canvas) {
-        val panelWidth = min(width * .76f, 340f * density)
-        fill.color = Color.argb(242, 0, 0, 0)
-        canvas.drawRect(0f, 0f, panelWidth, height.toFloat(), fill)
-        white.color = Color.argb(165, 255, 255, 255); white.strokeWidth = density
-        canvas.drawLine(panelWidth, 0f, panelWidth, height.toFloat(), white)
-        menuRows.clear()
-        canvas.save()
-        canvas.clipRect(0f, 0f, panelWidth, height.toFloat())
-        canvas.translate(0f, -menuScrollY)
-        var top = 58f * density
-        top = drawMenuButton(canvas, "SHOW CLOCK", top, checked = showClock, calendarId = ACTION_CLOCK)
-        top = drawMenuButton(canvas, "GALACTIC", top, checked = state == ViewState.GALACTIC, calendarId = ACTION_GALACTIC)
-        top = drawMenuButton(canvas, "FLIP N/S", top, checked = !north, calendarId = ACTION_NORTH)
-        top = drawMenuButton(canvas, "QUIT", top, checked = false, calendarId = ACTION_QUIT)
-        top += 12f * density
-        dimText.textAlign = Paint.Align.LEFT; dimText.textSize = 16f * density
-        canvas.drawText("GOOGLE CALENDAR", 20f * density, top + 18f * density, dimText)
-        dimText.textAlign = Paint.Align.CENTER
-        top += 30f * density
-        if (permissionDenied) {
-            text.textSize = 15f * density
-            canvas.drawText("Calendar permission denied", panelWidth / 2f, top + 24f * density, text)
-        } else if (calendars.isEmpty()) {
-            text.textSize = 15f * density
-            canvas.drawText("No synced calendars found", panelWidth / 2f, top + 24f * density, text)
-        } else {
-            calendars.forEach { calendar ->
-                val account = if (calendar.isGoogle) "Google" else calendar.accountType.substringAfterLast('.')
-                top = drawMenuButton(canvas, "${calendar.displayName}  ·  $account", top,
-                    checked = calendar.id in selectedCalendarIds, calendarId = calendar.id, color = calendar.color)
-            }
-        }
-        menuContentHeight = top + 16f * density
-        menuScrollY = menuScrollY.coerceIn(0f, (menuContentHeight - height).coerceAtLeast(0f))
-        canvas.restore()
-    }
-
-    private fun drawMenuButton(canvas: Canvas, label: String, top: Float, checked: Boolean, calendarId: Long, color: Int = Color.WHITE): Float {
-        val panelWidth = min(width * .76f, 340f * density)
-        val rect = RectF(12f * density, top, panelWidth - 12f * density, top + 48f * density)
-        fill.color = if (checked) Color.argb(70, Color.red(color), Color.green(color), Color.blue(color)) else Color.BLACK
-        canvas.drawRoundRect(rect, 4f * density, 4f * density, fill)
-        white.color = Color.argb(150, 255, 255, 255); white.strokeWidth = density
-        canvas.drawRoundRect(rect, 4f * density, 4f * density, white)
-        fill.color = if (checked) color else Color.DKGRAY
-        canvas.drawCircle(rect.left + 18f * density, rect.centerY(), 6f * density, fill)
-        text.textSize = 18f * density; text.textAlign = Paint.Align.LEFT
-        canvas.drawText(label, rect.left + 34f * density, rect.centerY() + 6f * density, text)
-        text.textAlign = Paint.Align.CENTER
-        menuRows += MenuRow(RectF(rect).apply { offset(0f, -menuScrollY) }, calendarId)
-        return rect.bottom + 8f * density
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -427,15 +479,7 @@ class SundialView(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (event.x < 64f * density && event.y < 64f * density) {
-                    menuOpen = !menuOpen; invalidate(); return true
-                }
-                if (menuOpen) {
-                    if (event.x <= min(width * .76f, 340f * density)) {
-                        menuLastTouchY = event.y
-                        menuDragging = false
-                        return true
-                    }
-                    menuOpen = false; invalidate(); return true
+                    onMenuRequested?.invoke(); return true
                 }
                 if (!realtime && event.y > height - 75f * density && event.x in width * .2f..width * .8f) {
                     resetNow(); return true
@@ -445,7 +489,7 @@ class SundialView(context: Context) : View(context) {
                     dragMode = DragMode.YEAR; realtime = false; updateYearDrag(event.x, event.y); return true
                 }
                 if (state == ViewState.HELIOCENTRIC && radiusFromCenter < r * .13f) {
-                    state = ViewState.GEOCENTRIC; invalidate(); return true
+                    state = ViewState.GEOCENTRIC; onControlsChanged?.invoke(); invalidate(); return true
                 }
                 if (state == ViewState.GEOCENTRIC && distance(event.x, event.y, moonPoint.first, moonPoint.second) < r * .09f) {
                     dragMode = DragMode.MOON; realtime = false; updateMoonDrag(event.x, event.y); return true
@@ -454,28 +498,18 @@ class SundialView(context: Context) : View(context) {
                     dragMode = DragMode.YEAR; realtime = false; updateYearDrag(event.x, event.y); return true
                 }
                 if (state == ViewState.GEOCENTRIC && radiusFromCenter < r * .48f) {
-                    state = ViewState.HELIOCENTRIC; invalidate(); return true
+                    state = ViewState.HELIOCENTRIC; onControlsChanged?.invoke(); invalidate(); return true
                 }
-                if (state == ViewState.GALACTIC) { state = ViewState.HELIOCENTRIC; invalidate(); return true }
+                if (state == ViewState.GALACTIC) { state = ViewState.HELIOCENTRIC; onControlsChanged?.invoke(); invalidate(); return true }
             }
             MotionEvent.ACTION_MOVE -> {
-                if (menuOpen) {
-                    val delta = menuLastTouchY - event.y
-                    if (kotlin.math.abs(delta) > density) menuDragging = true
-                    menuScrollY = (menuScrollY + delta).coerceIn(0f, (menuContentHeight - height).coerceAtLeast(0f))
-                    menuLastTouchY = event.y
-                    invalidate()
-                } else when (dragMode) {
+                when (dragMode) {
                     DragMode.YEAR -> updateYearDrag(event.x, event.y)
                     DragMode.MOON -> updateMoonDrag(event.x, event.y)
                     DragMode.NONE -> Unit
                 }
             }
             MotionEvent.ACTION_UP -> {
-                if (menuOpen && !menuDragging) {
-                    menuRows.firstOrNull { it.bounds.contains(event.x, event.y) }?.let { activateMenuRow(it.calendarId) }
-                }
-                menuDragging = false
                 dragMode = DragMode.NONE
                 performClick()
             }
@@ -487,21 +521,6 @@ class SundialView(context: Context) : View(context) {
     override fun performClick(): Boolean {
         super.performClick()
         return true
-    }
-
-    private fun activateMenuRow(id: Long?) {
-        when (id) {
-            ACTION_CLOCK -> showClock = !showClock
-            ACTION_GALACTIC -> state = if (state == ViewState.GALACTIC) ViewState.HELIOCENTRIC else ViewState.GALACTIC
-            ACTION_NORTH -> north = !north
-            ACTION_QUIT -> onQuit?.invoke()
-            null -> Unit
-            else -> {
-                if (!selectedCalendarIds.add(id)) selectedCalendarIds.remove(id)
-                onCalendarSelectionChanged?.invoke(selectedCalendarIds.toSet())
-            }
-        }
-        invalidate()
     }
 
     private fun updateYearDrag(x: Float, y: Float) {
@@ -522,7 +541,7 @@ class SundialView(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun resetNow() {
+    fun resetNow() {
         selectedInstant = Instant.now(); realtime = true; onCalendarSelectionChanged?.invoke(selectedCalendarIds.toSet()); invalidate()
     }
 
@@ -558,12 +577,4 @@ class SundialView(context: Context) : View(context) {
     private fun annualAngle(fraction: Double): Double = if (north) 105.0 - fraction * 360.0 else 75.0 + fraction * 360.0
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float = kotlin.math.hypot(x1 - x2, y1 - y2)
     private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
-    private fun Paint.letterSpacingCompat(value: Float) { /* Canvas Paint has no cross-version letter-spacing; retained as a layout marker. */ }
-
-    companion object {
-        private const val ACTION_CLOCK = -1L
-        private const val ACTION_GALACTIC = -2L
-        private const val ACTION_NORTH = -3L
-        private const val ACTION_QUIT = -4L
-    }
 }
