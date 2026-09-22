@@ -8,6 +8,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.primesoftwaresystems.sundial.ui.SundialView
+import com.primesoftwaresystems.sundial.ui.CelestialStyle
+import com.primesoftwaresystems.sundial.ui.CelestialStylePreferences
+import com.primesoftwaresystems.sundial.wallpaper.DailyWallpaperScheduler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -49,6 +52,33 @@ class MainActivityLaunchTest {
             } finally {
                 bitmap.recycle()
             }
+        }
+    }
+
+    @Test fun geocentricLockWallpaperUsesSharedCelestialBackground() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        CelestialStylePreferences.set(context, CelestialStyle.CRIMSON_NEBULA)
+        DailyWallpaperScheduler.setUseLockScreen(context, true)
+        try {
+            assertTrue(DailyWallpaperScheduler.usesLockScreen(context))
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val bitmap = SundialView(context).renderWallpaperBitmap(
+                    360,
+                    800,
+                    Instant.parse("2026-09-22T19:30:00Z"),
+                    SundialView.ViewState.GEOCENTRIC,
+                )
+                try {
+                    val corner = bitmap.getPixel(12, 12)
+                    assertTrue("Crimson background must carry into wallpaper", Color.red(corner) > Color.blue(corner))
+                    val earth = bitmap.getPixel(180, (800 * .47f).toInt())
+                    assertTrue("Earth-centered wallpaper must render a visible globe", Color.red(earth) + Color.green(earth) + Color.blue(earth) > 55)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+        } finally {
+            CelestialStylePreferences.set(context, CelestialStyle.VOID_BLACK)
         }
     }
 }

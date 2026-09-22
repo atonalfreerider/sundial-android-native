@@ -36,7 +36,11 @@ class MainActivity : Activity() {
             onMenuRequested = { drawerLayout.openDrawer(GravityCompat.START) }
             onControlsChanged = {
                 if (::drawerView.isInitialized) {
-                    drawerView.syncControls(this, DailyWallpaperScheduler.isEnabled(this@MainActivity))
+                    drawerView.syncControls(
+                        this,
+                        DailyWallpaperScheduler.isEnabled(this@MainActivity),
+                        DailyWallpaperScheduler.usesLockScreen(this@MainActivity),
+                    )
                 }
             }
             onCalendarSelectionChanged = { ids -> loadOccurrences(ids) }
@@ -50,9 +54,24 @@ class MainActivity : Activity() {
                 DailyWallpaperScheduler.setEnabled(this@MainActivity, enabled)
                 Toast.makeText(
                     this@MainActivity,
-                    if (enabled) "Daily heliocentric wallpaper enabled" else "Daily wallpaper disabled",
+                    if (enabled) "15-minute celestial wallpaper enabled" else "Celestial wallpaper disabled",
                     Toast.LENGTH_SHORT,
                 ).show()
+            }
+            onLockWallpaperChanged = { useLockScreen ->
+                DailyWallpaperScheduler.setUseLockScreen(this@MainActivity, useLockScreen)
+                Toast.makeText(
+                    this@MainActivity,
+                    if (useLockScreen) "Wallpaper target: lock screen" else "Wallpaper target: home screen",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            onBackgroundStyleChanged = { style ->
+                sundialView.setBackgroundStyle(style)
+                setBackgroundStyle(style)
+                if (DailyWallpaperScheduler.isEnabled(this@MainActivity)) {
+                    DailyWallpaperScheduler.applyNow(this@MainActivity)
+                }
             }
             onResetNow = { sundialView.resetNow() }
             onQuit = { finishAndRemoveTask() }
@@ -60,7 +79,11 @@ class MainActivity : Activity() {
                 sundialView.setSelectedCalendarIds(ids)
                 loadOccurrences(ids)
             }
-            syncControls(sundialView, DailyWallpaperScheduler.isEnabled(this@MainActivity))
+            syncControls(
+                sundialView,
+                DailyWallpaperScheduler.isEnabled(this@MainActivity),
+                DailyWallpaperScheduler.usesLockScreen(this@MainActivity),
+            )
         }
         drawerLayout = DrawerLayout(this).apply {
             id = R.id.drawer_layout
@@ -77,7 +100,11 @@ class MainActivity : Activity() {
         }
         setContentView(drawerLayout)
         DailyWallpaperScheduler.configureForRequest(this)
-        drawerView.syncControls(sundialView, DailyWallpaperScheduler.isEnabled(this))
+        drawerView.syncControls(
+            sundialView,
+            DailyWallpaperScheduler.isEnabled(this),
+            DailyWallpaperScheduler.usesLockScreen(this),
+        )
         window.decorView.post { hideSystemBars() }
         ensureCalendarPermission()
     }

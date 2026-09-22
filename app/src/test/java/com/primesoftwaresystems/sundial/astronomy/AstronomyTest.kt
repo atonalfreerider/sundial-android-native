@@ -65,6 +65,11 @@ class AstronomyTest {
         assertTrue("phase=$phase", distanceFromNew < 2.0)
     }
 
+    @Test fun `lunar phase is near full at a published full moon`() {
+        val phase = Astronomy.moonPhaseDegrees(Instant.parse("2024-03-25T07:00:00Z"))
+        assertTrue("phase=$phase", abs(phase - 180.0) < 3.0)
+    }
+
     @Test fun `annual mapping never depends on current system year`() {
         val old = ZonedDateTime.parse("1984-12-31T12:00:00Z")
         val modern = ZonedDateTime.parse("2024-12-31T12:00:00Z")

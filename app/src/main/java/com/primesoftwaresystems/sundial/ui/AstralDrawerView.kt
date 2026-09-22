@@ -26,7 +26,9 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     private val clockSwitch = controlSwitch("CLOCK")
     private val galacticSwitch = controlSwitch("GALACTIC AXIS")
     private val hemisphereSwitch = controlSwitch("SOUTHERN HEMISPHERE")
-    private val wallpaperSwitch = controlSwitch("DAILY HELIOCENTRIC WALLPAPER")
+    private val wallpaperSwitch = controlSwitch("15-MIN CELESTIAL WALLPAPER")
+    private val lockWallpaperSwitch = controlSwitch("APPLY TO LOCK SCREEN")
+    private val backgroundContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val calendarContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val selectedCalendarIds = linkedSetOf<Long>()
     private var syncing = false
@@ -35,6 +37,8 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     var onGalacticChanged: ((Boolean) -> Unit)? = null
     var onHemisphereChanged: ((Boolean) -> Unit)? = null
     var onDailyWallpaperChanged: ((Boolean) -> Unit)? = null
+    var onLockWallpaperChanged: ((Boolean) -> Unit)? = null
+    var onBackgroundStyleChanged: ((CelestialStyle) -> Unit)? = null
     var onResetNow: (() -> Unit)? = null
     var onQuit: (() -> Unit)? = null
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
@@ -55,7 +59,11 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
         content.addView(galacticSwitch)
         content.addView(hemisphereSwitch)
         content.addView(wallpaperSwitch)
+        content.addView(lockWallpaperSwitch)
         content.addView(action("RETURN TO NOW", "Reset the instrument to the current date and time") { onResetNow?.invoke() })
+        content.addView(section("BACKGROUND COLOR"))
+        content.addView(backgroundContainer)
+        setBackgroundStyle(CelestialStylePreferences.get(context))
         content.addView(section("GOOGLE CALENDAR"))
         content.addView(calendarContainer)
         content.addView(section("APPLICATION"))
@@ -65,16 +73,33 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
         galacticSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onGalacticChanged?.invoke(checked) }
         hemisphereSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onHemisphereChanged?.invoke(checked) }
         wallpaperSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onDailyWallpaperChanged?.invoke(checked) }
+        lockWallpaperSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onLockWallpaperChanged?.invoke(checked) }
         showCalendarMessage("Loading synced calendars…")
     }
 
-    fun syncControls(view: SundialView, dailyWallpaperEnabled: Boolean = wallpaperSwitch.isChecked) {
+    fun syncControls(
+        view: SundialView,
+        dailyWallpaperEnabled: Boolean = wallpaperSwitch.isChecked,
+        lockWallpaperEnabled: Boolean = lockWallpaperSwitch.isChecked,
+    ) {
         syncing = true
         clockSwitch.isChecked = view.isClockVisible
         galacticSwitch.isChecked = view.isGalacticVisible
         hemisphereSwitch.isChecked = view.isSouthernHemisphere
         wallpaperSwitch.isChecked = dailyWallpaperEnabled
+        lockWallpaperSwitch.isChecked = lockWallpaperEnabled
         syncing = false
+    }
+
+    fun setBackgroundStyle(selected: CelestialStyle) {
+        backgroundContainer.removeAllViews()
+        CelestialStyle.entries.forEach { style ->
+            val marker = if (style == selected) "◆" else "◇"
+            backgroundContainer.addView(action(
+                "$marker  ${style.displayName.uppercase()}",
+                "Use ${style.displayName} in Sundial and wallpaper",
+            ) { onBackgroundStyleChanged?.invoke(style) })
+        }
     }
 
     fun setCalendars(calendars: List<DeviceCalendar>) {

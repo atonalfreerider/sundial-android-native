@@ -15,8 +15,6 @@ import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.primesoftwaresystems.sundial.ui.SundialView
-import java.time.Duration
-import java.time.ZonedDateTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -33,6 +31,7 @@ class DailyWallpaperWorker(appContext: Context, params: WorkerParameters) : Work
 object DailyWallpaperScheduler {
     private const val PREFERENCES = "daily_heliocentric_wallpaper"
     private const val ENABLED = "enabled"
+    private const val USE_LOCK_SCREEN = "use_lock_screen"
     private const val PERIODIC_WORK = "daily_heliocentric_wallpaper_periodic"
     private const val IMMEDIATE_WORK = "daily_heliocentric_wallpaper_now"
 
@@ -49,6 +48,9 @@ object DailyWallpaperScheduler {
 
     fun isEnabled(context: Context): Boolean = preferences(context).getBoolean(ENABLED, false)
 
+    fun usesLockScreen(context: Context): Boolean =
+        preferences(context).getBoolean(USE_LOCK_SCREEN, true)
+
     fun setEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit().putBoolean(ENABLED, enabled).apply()
         if (enabled) {
@@ -60,18 +62,19 @@ object DailyWallpaperScheduler {
         }
     }
 
+    fun setUseLockScreen(context: Context, enabled: Boolean) {
+        preferences(context).edit().putBoolean(USE_LOCK_SCREEN, enabled).apply()
+        if (isEnabled(context)) applyNow(context)
+    }
+
     fun applyNow(context: Context) {
         val request = OneTimeWorkRequest.Builder(DailyWallpaperWorker::class.java).build()
         WorkManager.getInstance(context).enqueueUniqueWork(IMMEDIATE_WORK, ExistingWorkPolicy.REPLACE, request)
     }
 
     private fun schedule(context: Context) {
-        val now = ZonedDateTime.now()
-        val nextUpdate = now.toLocalDate().plusDays(1).atTime(0, 5).atZone(now.zone)
-        val initialDelay = Duration.between(now, nextUpdate).toMillis().coerceAtLeast(0L)
-        val request = PeriodicWorkRequest.Builder(DailyWallpaperWorker::class.java, 24, TimeUnit.HOURS)
-            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
-            .build()
+        // WorkManager's minimum periodic interval is 15 minutes.
+        val request = PeriodicWorkRequest.Builder(DailyWallpaperWorker::class.java, 15, TimeUnit.MINUTES).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK,
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -92,7 +95,8 @@ internal object WallpaperRenderer {
                 bitmap,
                 Rect(0, 0, bitmap.width, bitmap.height),
                 false,
-                WallpaperManager.FLAG_SYSTEM,
+                if (DailyWallpaperScheduler.usesLockScreen(context)) WallpaperManager.FLAG_LOCK
+                else WallpaperManager.FLAG_SYSTEM,
             )
         } finally {
             bitmap.recycle()
@@ -112,14 +116,22 @@ internal object WallpaperRenderer {
 
     private fun renderOnMainThread(context: Context, width: Int, height: Int): Bitmap {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            return SundialView(context).renderWallpaperBitmap(width, height)
+            return SundialView(context).renderWallpaperBitmap(
+                width,
+                height,
+                wallpaperState = SundialView.ViewState.GEOCENTRIC,
+            )
         }
         val bitmap = AtomicReference<Bitmap>()
         val failure = AtomicReference<Throwable>()
         val latch = CountDownLatch(1)
         Handler(Looper.getMainLooper()).post {
             try {
-                bitmap.set(SundialView(context).renderWallpaperBitmap(width, height))
+                bitmap.set(SundialView(context).renderWallpaperBitmap(
+                    width,
+                    height,
+                    wallpaperState = SundialView.ViewState.GEOCENTRIC,
+                ))
             } catch (error: Throwable) {
                 failure.set(error)
             } finally {

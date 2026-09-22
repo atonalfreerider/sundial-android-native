@@ -27,13 +27,17 @@ class EarthSphereRenderer(private val source: Bitmap) {
             if (cachedSize == safeSize && cachedRotationBucket == bucket && cachedNorth == north) return it
         }
 
+        // Do not recycle or mutate the previous frame: a hardware Canvas display list can still
+        // reference it while the next rotation is being prepared.
         val output = Bitmap.createBitmap(safeSize, safeSize, Bitmap.Config.ARGB_8888)
         val pixels = IntArray(safeSize * safeSize)
         val texturePixels = IntArray(source.width * source.height)
         source.getPixels(texturePixels, 0, source.width, 0, 0, source.width, source.height)
         val rotation = Math.toRadians(bucket / 2.0)
         val tilt = Math.toRadians(if (north) 23.43928 else -23.43928)
-        val light = doubleArrayOf(-0.38, -0.55, 0.74)
+        // In geocentric view the Sun is above Earth. A broad frontal component keeps the texture
+        // legible while the positive screen-Y component produces a visible, moving day/night form.
+        val light = doubleArrayOf(0.08, 0.61, 0.79)
         val center = (safeSize - 1) / 2.0
         val radius = safeSize * 0.485
 
@@ -57,19 +61,21 @@ class EarthSphereRenderer(private val source: Bitmap) {
                 val v = ((0.5 - latitude / PI) * (source.height - 1)).toInt().coerceIn(0, source.height - 1)
                 val sample = texturePixels[v * source.width + u]
 
-                val diffuse = (sx * light[0] + sy * light[1] + sz * light[2]).coerceAtLeast(0.0)
+                val rawDiffuse = sx * light[0] + sy * light[1] + sz * light[2]
+                val diffuse = ((rawDiffuse + 0.12) / 1.12).coerceIn(0.0, 1.0)
                 val rim = (1.0 - sz).pow(2.6)
-                val illumination = (0.075 + diffuse * 0.96).coerceAtMost(1.0)
+                val illumination = (0.26 + diffuse * 0.80).coerceAtMost(1.0)
                 val atmosphere = (rim * 72).toInt()
-                val red = (Color.red(sample) * illumination + atmosphere * 0.32).toInt().coerceIn(0, 255)
-                val green = (Color.green(sample) * illumination + atmosphere * 0.52).toInt().coerceIn(0, 255)
-                val blue = (Color.blue(sample) * illumination + atmosphere).toInt().coerceIn(0, 255)
+                // The satellite texture has near-black oceans. Lift its photographic floor before
+                // lighting so every longitude still reads as Earth, while the terminator remains.
+                val red = ((Color.red(sample) * 1.35 + 8.0) * illumination + atmosphere * 0.32).toInt().coerceIn(0, 255)
+                val green = ((Color.green(sample) * 1.35 + 12.0) * illumination + atmosphere * 0.52).toInt().coerceIn(0, 255)
+                val blue = ((Color.blue(sample) * 1.35 + 20.0) * illumination + atmosphere).toInt().coerceIn(0, 255)
                 val edgeAlpha = ((1.0 - ((rr - 0.94) / 0.06).coerceIn(0.0, 1.0)) * 255).toInt()
                 pixels[py * safeSize + px] = Color.argb(edgeAlpha, red, green, blue)
             }
         }
         output.setPixels(pixels, 0, safeSize, 0, 0, safeSize, safeSize)
-        cached?.recycle()
         cached = output
         cachedSize = safeSize
         cachedRotationBucket = bucket
