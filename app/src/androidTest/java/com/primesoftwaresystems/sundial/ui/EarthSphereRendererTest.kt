@@ -39,4 +39,31 @@ class EarthSphereRendererTest {
             assertTrue(Color.red(pixel) + Color.green(pixel) + Color.blue(pixel) > 85)
         }
     }
+
+    @Test fun solarNorthLightingKeepsANoticeableNonSunFacingShadow() {
+        val neutralTexture = android.graphics.Bitmap.createBitmap(8, 4, android.graphics.Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(170, 170, 170))
+        }
+        val earth = EarthSphereRenderer(neutralTexture).render(240, 0.0, north = true)
+        val upper = averageLuma(earth, 45, 95)
+        val lower = averageLuma(earth, 145, 195)
+
+        assertTrue("Sun-facing north must be visibly brighter", upper > lower * 1.16)
+        assertTrue("Shadow must retain readable surface detail", lower > 95.0)
+    }
+
+    private fun averageLuma(bitmap: android.graphics.Bitmap, fromY: Int, untilY: Int): Double {
+        var total = 0L
+        var count = 0
+        for (y in fromY until untilY) {
+            for (x in 65 until 175) {
+                val pixel = bitmap.getPixel(x, y)
+                if (Color.alpha(pixel) > 200) {
+                    total += Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)
+                    count++
+                }
+            }
+        }
+        return total.toDouble() / count.coerceAtLeast(1) / 3.0
+    }
 }

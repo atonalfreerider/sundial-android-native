@@ -58,6 +58,8 @@ class MainActivityLaunchTest {
 
     @Test fun geocentricLockWallpaperUsesSharedCelestialBackground() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val originalStyle = CelestialStylePreferences.get(context)
+        val originalLockSetting = DailyWallpaperScheduler.usesLockScreen(context)
         CelestialStylePreferences.set(context, CelestialStyle.CRIMSON_NEBULA)
         DailyWallpaperScheduler.setUseLockScreen(context, true)
         try {
@@ -79,7 +81,8 @@ class MainActivityLaunchTest {
                 }
             }
         } finally {
-            CelestialStylePreferences.set(context, CelestialStyle.VOID_BLACK)
+            CelestialStylePreferences.set(context, originalStyle)
+            DailyWallpaperScheduler.setUseLockScreen(context, originalLockSetting)
         }
     }
 }

@@ -34,4 +34,18 @@ class DialGeometryTest {
         assertEquals(69.96f, day0.thickness, .01f)
         assertTrue(day0.centerRadius < 600f)
     }
+
+    @Test fun `earth flight follows Unity camera zoom while earth system expands independently`() {
+        val start = DialGeometry.earthFlightFrame(0f)
+        val middle = DialGeometry.earthFlightFrame(.5f)
+        val end = DialGeometry.earthFlightFrame(1f)
+
+        assertEquals(1f, start.cameraScale, .0001f)
+        assertEquals(DialGeometry.EARTH_CAMERA_ZOOM, end.cameraScale, .0001f)
+        assertEquals(DialGeometry.HELIOCENTRIC_EARTH_RADIUS,
+            start.earthSystemScale * DialGeometry.EARTH_RADIUS, .0001f)
+        assertEquals(1f, end.earthSystemScale, .0001f)
+        assertTrue(middle.cameraScale in start.cameraScale..end.cameraScale)
+        assertTrue(middle.earthSystemScale in start.earthSystemScale..end.earthSystemScale)
+    }
 }

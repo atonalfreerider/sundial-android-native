@@ -87,7 +87,7 @@ class MainActivity : Activity() {
                 DailyWallpaperScheduler.setUseLockScreen(this@MainActivity, useLockScreen)
                 Toast.makeText(
                     this@MainActivity,
-                    if (useLockScreen) "Wallpaper target: lock screen" else "Wallpaper target: home screen",
+                    if (useLockScreen) "Home and lock wallpapers enabled" else "Home wallpaper only",
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -99,11 +99,12 @@ class MainActivity : Activity() {
             onBackgroundStyleChanged = { style ->
                 sundialView.setBackgroundStyle(style)
                 setBackgroundStyle(style)
-                if (DailyWallpaperScheduler.isEnabled(this@MainActivity)) {
-                    DailyWallpaperScheduler.applyNow(this@MainActivity)
-                }
+                refreshWallpapers()
             }
-            onResetNow = { sundialView.resetNow() }
+            onResetNow = {
+                sundialView.resetNow()
+                refreshWallpapers()
+            }
             onQuit = { finishAndRemoveTask() }
             onCalendarSelectionChanged = { ids ->
                 sundialView.setSelectedCalendarIds(ids)
@@ -203,6 +204,10 @@ class MainActivity : Activity() {
             if (profile.isComplete) "Birth details stay on this device. Generate a fresh daily reading."
             else "Set birthday and birth time to enable the private on-device horoscope."
         )
+        refreshWallpapers()
+    }
+
+    private fun refreshWallpapers() {
         if (DailyWallpaperScheduler.isEnabled(this)) DailyWallpaperScheduler.applyNow(this)
     }
 

@@ -13,6 +13,10 @@ object DialGeometry {
     const val TIME_ZONE_DIAL = MOON_DIAL * (42f / 67.5f)
     const val EARTH_RADIUS = MOON_DIAL * (37.5f / 67.5f)
 
+    /** Matches Unity's portrait earthOrthoSize = solOrthoSize * .45 camera move. */
+    const val EARTH_CAMERA_ZOOM = 1f / .45f
+    const val HELIOCENTRIC_EARTH_RADIUS = .025f
+
     data class EventBand(val centerRadius: Float, val thickness: Float)
 
     fun annualAngle(fraction: Double, north: Boolean): Double =
@@ -35,5 +39,16 @@ object DialGeometry {
         val thickness = hourRadius * .1166f
         val outer = hourRadius - hourRadius * .0166f - calendarIndex.coerceAtLeast(0) * thickness
         return EventBand(outer - thickness / 2f, thickness)
+    }
+
+    data class EarthFlightFrame(val cameraScale: Float, val earthSystemScale: Float)
+
+    fun earthFlightFrame(progress: Float): EarthFlightFrame {
+        val p = progress.coerceIn(0f, 1f)
+        return EarthFlightFrame(
+            cameraScale = 1f + (EARTH_CAMERA_ZOOM - 1f) * p,
+            earthSystemScale = HELIOCENTRIC_EARTH_RADIUS / EARTH_RADIUS +
+                (1f - HELIOCENTRIC_EARTH_RADIUS / EARTH_RADIUS) * p,
+        )
     }
 }

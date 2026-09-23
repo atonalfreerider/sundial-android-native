@@ -13,8 +13,8 @@ android {
         applicationId = "com.PrimeSoftwareSystems.Sundial"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "2.2-native"
+        versionCode = 11
+        versionName = "2.3-native"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

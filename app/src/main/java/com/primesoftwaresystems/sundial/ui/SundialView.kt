@@ -31,8 +31,8 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.random.Random
 
 class SundialView(context: Context) : View(context) {
     enum class ViewState { HELIOCENTRIC, GEOCENTRIC, GALACTIC }
@@ -51,15 +51,40 @@ class SundialView(context: Context) : View(context) {
     private val moonRenderer = MoonSphereRenderer()
     private val zone: ZoneId get() = ZoneId.systemDefault()
 
-    private data class AmbientStar(val xFraction: Float, val yFraction: Float, val radiusDp: Float, val alpha: Int)
-    private val ambientStars = List(96) { index ->
-        AmbientStar(
-            xFraction = ((index * 73 + 19) % 997) / 997f,
-            yFraction = ((index * 181 + 43) % 991) / 991f,
-            radiusDp = .34f + ((index * 29) % 13) / 13f * .82f,
-            alpha = 28 + (index * 37) % 72,
-        )
+    private data class AmbientStar(
+        val xFraction: Float,
+        val yFraction: Float,
+        val radiusDp: Float,
+        val alpha: Int,
+        val flare: Boolean = false,
+    )
+    private val ambientStars = Random(0x51A7D1A1).run {
+        List(76) { index ->
+            AmbientStar(
+                xFraction = nextFloat(),
+                yFraction = nextFloat(),
+                radiusDp = .28f + nextFloat() * if (index % 11 == 0) 1.12f else .63f,
+                alpha = 30 + nextInt(if (index % 11 == 0) 100 else 64),
+                flare = index % 17 == 0,
+            )
+        }
     }
+    private val dustLaneStars = Random(0x0B17A5E).run {
+        List(64) {
+            val x = nextFloat()
+            AmbientStar(
+                xFraction = x,
+                yFraction = (.10f + x * .78f + (nextFloat() - .5f) * .13f).coerceIn(.02f, .98f),
+                radiusDp = .20f + nextFloat() * .42f,
+                alpha = 12 + nextInt(34),
+            )
+        }
+    }
+    private val constellationPaths = listOf(
+        listOf(.70f to .075f, .76f to .105f, .82f to .072f, .88f to .128f, .93f to .095f),
+        listOf(.055f to .76f, .11f to .79f, .15f to .845f, .22f to .82f, .27f to .875f),
+        listOf(.69f to .84f, .76f to .80f, .82f to .855f, .89f to .82f, .94f to .91f),
+    )
 
     private var state = ViewState.HELIOCENTRIC
     private var showClock = false
@@ -83,6 +108,14 @@ class SundialView(context: Context) : View(context) {
     private var transitionStartedAt = 0L
     private var transitionEarthPoint = Pair(0f, 0f)
     private var transitionCameraRotation = 0f
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var dragStarted = false
+    private var inspectedEvent: CalendarOccurrence? = null
+    private var inspectedCandidates: List<CalendarOccurrence> = emptyList()
+    private var inspectedCandidateIndex = 0
+    private var eventCycleAnchorX = 0f
+    private var eventCycleAnchorY = 0f
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
     var onMenuRequested: (() -> Unit)? = null
     var onControlsChanged: (() -> Unit)? = null
@@ -91,9 +124,12 @@ class SundialView(context: Context) : View(context) {
     val isClockVisible: Boolean get() = showClock
     val isGalacticVisible: Boolean get() = state == ViewState.GALACTIC
     val isSouthernHemisphere: Boolean get() = !north
+    internal val selectedInstantForTest: Instant get() = selectedInstant
+    internal val earthPointForTest: Pair<Float, Float> get() = earthPoint
+    internal val inspectedEventTitleForTest: String? get() = inspectedEvent?.title
     private val instrumentColor: Int get() = backgroundStyle.instrumentColor
 
-    private enum class DragMode { NONE, YEAR, MOON }
+    private enum class DragMode { NONE, YEAR, MOON, EVENT }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -157,7 +193,10 @@ class SundialView(context: Context) : View(context) {
         } else {
             drawState(canvas, state)
         }
-        if (!wallpaperMode) drawChrome(canvas)
+        if (!wallpaperMode) {
+            drawChrome(canvas)
+            inspectedEvent?.let { drawEventInspectionOverlay(canvas, it) }
+        }
         if (running && !wallpaperMode) postInvalidateDelayed(if (showClock) 250L else 1_000L)
     }
 
@@ -190,19 +229,51 @@ class SundialView(context: Context) : View(context) {
     }
 
     private fun drawAmbientStars(canvas: Canvas) {
-        val star = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        ambientStars.forEachIndexed { index, point ->
+        val constellation = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = withAlpha(blendColor(instrumentColor, backgroundStyle.accentColor, .35f), 30)
+            style = Paint.Style.STROKE
+            strokeWidth = .55f * density
+            pathEffect = DashPathEffect(floatArrayOf(2.5f * density, 5f * density), 0f)
+        }
+        constellationPaths.forEach { points ->
+            canvas.drawPath(Path().apply {
+                points.forEachIndexed { index, point ->
+                    val x = point.first * width
+                    val y = point.second * height
+                    if (index == 0) moveTo(x, y) else lineTo(x, y)
+                }
+            }, constellation)
+        }
+
+        val dust = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        dustLaneStars.forEach { point ->
+            dust.color = withAlpha(backgroundStyle.accentColor, point.alpha)
+            canvas.drawCircle(point.xFraction * width, point.yFraction * height, point.radiusDp * density, dust)
+        }
+
+        val star = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; strokeCap = Paint.Cap.ROUND }
+        ambientStars.forEach { point ->
             val x = point.xFraction * width
             val y = point.yFraction * height
             val radius = point.radiusDp * density
             star.color = withAlpha(instrumentColor, point.alpha)
             canvas.drawCircle(x, y, radius, star)
-            if (index % 19 == 0) {
+            if (point.flare) {
                 star.strokeWidth = maxOf(.45f * density, radius * .42f)
-                star.strokeCap = Paint.Cap.ROUND
                 canvas.drawLine(x - radius * 2.4f, y, x + radius * 2.4f, y, star)
                 canvas.drawLine(x, y - radius * 2.4f, x, y + radius * 2.4f, star)
             }
+        }
+
+        val node = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        constellationPaths.flatten().forEachIndexed { index, point ->
+            node.color = withAlpha(instrumentColor, if (index % 4 == 0) 112 else 72)
+            canvas.drawCircle(
+                point.first * width,
+                point.second * height,
+                (if (index % 4 == 0) 1.15f else .72f) * density,
+                node,
+            )
         }
     }
 
@@ -221,29 +292,23 @@ class SundialView(context: Context) : View(context) {
     private fun drawEarthCameraFlight(canvas: Canvas, cx: Float, cy: Float, progress: Float) {
         val targetX = lerp(transitionEarthPoint.first, cx, progress)
         val targetY = lerp(transitionEarthPoint.second, cy, progress)
-        val geoMinimumScale = .025f / DialGeometry.EARTH_RADIUS
-        val geoScale = geoMinimumScale * (1f / geoMinimumScale).pow(progress)
+        val frame = DialGeometry.earthFlightFrame(progress)
         val cameraRotation = transitionCameraRotation * progress
 
         val heliocentricAlpha = when {
-            progress < .28f -> 1f
-            progress > .72f -> 0f
-            else -> 1f - (progress - .28f) / .44f
+            progress < .48f -> 1f
+            progress > .94f -> 0f
+            else -> 1f - (progress - .48f) / .46f
         }
-        val geocentricAlpha = when {
-            progress < .18f -> .22f
-            progress > .62f -> 1f
-            else -> .22f + (progress - .18f) / .44f * .78f
-        }
+        val geocentricAlpha = (progress / .22f).coerceIn(0f, 1f)
 
         if (heliocentricAlpha > .01f) {
             val checkpoint = canvas.saveLayerAlpha(
                 0f, 0f, width.toFloat(), height.toFloat(), (heliocentricAlpha * 255).toInt(),
             )
-            val heliocentricScale = 1f + progress * progress * 19f
             canvas.translate(targetX, targetY)
             canvas.rotate(cameraRotation)
-            canvas.scale(heliocentricScale, heliocentricScale)
+            canvas.scale(frame.cameraScale, frame.cameraScale)
             canvas.translate(-transitionEarthPoint.first, -transitionEarthPoint.second)
             drawState(canvas, ViewState.HELIOCENTRIC)
             canvas.restoreToCount(checkpoint)
@@ -254,8 +319,7 @@ class SundialView(context: Context) : View(context) {
                 0f, 0f, width.toFloat(), height.toFloat(), (geocentricAlpha * 255).toInt(),
             )
             canvas.translate(targetX, targetY)
-            canvas.rotate(cameraRotation)
-            canvas.scale(geoScale, geoScale)
+            canvas.scale(frame.earthSystemScale, frame.earthSystemScale)
             canvas.translate(-cx, -cy)
             drawState(canvas, ViewState.GEOCENTRIC)
             canvas.restoreToCount(checkpoint)
@@ -1109,25 +1173,218 @@ class SundialView(context: Context) : View(context) {
         return normalized.substring(0, splitAt).trim() to normalized.substring(splitAt).trim()
     }
 
+    private fun drawEventInspectionOverlay(canvas: Canvas, event: CalendarOccurrence) {
+        val cardWidth = minOf(width - 36f * density, 420f * density)
+        val cardHeight = 196f * density
+        val bounds = RectF(
+            (width - cardWidth) / 2f,
+            (height - cardHeight) / 2f,
+            (width + cardWidth) / 2f,
+            (height + cardHeight) / 2f,
+        )
+        val panel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                bounds.centerX(), bounds.centerY(), bounds.width() * .72f,
+                intArrayOf(withAlpha(backgroundStyle.haloColor, 248), withAlpha(backgroundStyle.baseColor, 248)),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRoundRect(bounds, 22f * density, 22f * density, panel)
+        white.color = withAlpha(event.color, 245)
+        white.strokeWidth = 2f * density
+        canvas.drawRoundRect(bounds, 22f * density, 22f * density, white)
+
+        val countLabel = if (inspectedCandidates.size > 1) {
+            "EVENT ${inspectedCandidateIndex + 1} OF ${inspectedCandidates.size} · DRAG TO CYCLE"
+        } else {
+            "CALENDAR EVENT · HOLD TO INSPECT"
+        }
+        val eyebrow = Paint(text).apply {
+            color = withAlpha(event.color, 255)
+            textSize = 13f * density
+            letterSpacing = .10f
+        }
+        canvas.drawText(countLabel, bounds.centerX(), bounds.top + 29f * density, eyebrow)
+
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = instrumentColor
+            textSize = 28f * density
+            typeface = resources.getFont(R.font.franklin_condensed)
+        }
+        val titleLayout = StaticLayout.Builder.obtain(
+            event.title, 0, event.title.length, titlePaint, (bounds.width() - 40f * density).toInt(),
+        ).setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setIncludePad(false)
+            .setMaxLines(2)
+            .setEllipsize(android.text.TextUtils.TruncateAt.END)
+            .build()
+        canvas.save()
+        canvas.translate(bounds.left + 20f * density, bounds.top + 54f * density)
+        titleLayout.draw(canvas)
+        canvas.restore()
+
+        val timing = Paint(text).apply {
+            color = withAlpha(instrumentColor, 220)
+            textSize = 17f * density
+        }
+        canvas.drawText(eventTimingLabel(event), bounds.centerX(), bounds.bottom - 29f * density, timing)
+    }
+
+    private fun eventTimingLabel(event: CalendarOccurrence): String {
+        if (event.isAllDay) {
+            val start = requireNotNull(event.allDayStart)
+            val endExclusive = requireNotNull(event.allDayEndExclusive)
+            return if (endExclusive == start.plusDays(1)) {
+                "ALL DAY · ${start.format(DateTimeFormatter.ofPattern("EEE, MMM d"))}"
+            } else {
+                "ALL DAY · ${start.format(DateTimeFormatter.ofPattern("MMM d"))} – " +
+                    endExclusive.minusDays(1).format(DateTimeFormatter.ofPattern("MMM d"))
+            }
+        }
+        val localStart = event.start.withZoneSameInstant(zone)
+        val localEnd = event.endExclusive.withZoneSameInstant(zone)
+        val sameDay = localStart.toLocalDate() == localEnd.toLocalDate()
+        return if (sameDay) {
+            localStart.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a")) +
+                " – " + localEnd.format(DateTimeFormatter.ofPattern("h:mm a"))
+        } else {
+            localStart.format(DateTimeFormatter.ofPattern("MMM d, h:mm a")) +
+                " – " + localEnd.format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))
+        }
+    }
+
+    private fun calendarEventsAt(x: Float, y: Float): List<CalendarOccurrence> {
+        val (cx, cy, r) = geometry()
+        val radius = distance(x, y, cx, cy)
+        val angle = Math.toDegrees(atan2((y - cy).toDouble(), (x - cx).toDouble()))
+        val touchPadding = 13f * density
+        return when (state) {
+            ViewState.HELIOCENTRIC -> {
+                val fraction = DialGeometry.yearFractionFromAngle(angle, north)
+                occurrences.asSequence()
+                    .filter { it.isYearRingEvent }
+                    .mapNotNull { event ->
+                        val segment = CalendarIntervals.inYear(event, displayedYear, zone) ?: return@mapNotNull null
+                        val band = DialGeometry.yearEventBand(r, calendarIndex(event.calendarId))
+                        if (kotlin.math.abs(radius - band.centerRadius) > band.thickness / 2f + touchPadding) {
+                            return@mapNotNull null
+                        }
+                        val angularPadding = Math.toDegrees(
+                            atan2(touchPadding.toDouble(), band.centerRadius.toDouble()),
+                        ) / 360.0
+                        if (!CalendarHitTesting.containsYearFraction(
+                                fraction, segment.startFraction, segment.sweepFraction, angularPadding,
+                            )) return@mapNotNull null
+                        event to kotlin.math.abs(radius - band.centerRadius)
+                    }
+                    .sortedBy { it.second }
+                    .map { it.first }
+                    .toList()
+            }
+            ViewState.GEOCENTRIC -> {
+                val minute = Astronomy.normalizeDegrees(angle + 90.0) * 4.0
+                val hourR = r * DialGeometry.HOUR_DIAL
+                occurrences.asSequence()
+                    .filter { !it.isYearRingEvent }
+                    .mapNotNull { event ->
+                        val segment = CalendarIntervals.inDay(
+                            event, selectedInstant.atZone(zone).toLocalDate(), zone,
+                        ) ?: return@mapNotNull null
+                        val band = DialGeometry.dayEventBand(hourR, calendarIndex(event.calendarId))
+                        if (kotlin.math.abs(radius - band.centerRadius) > band.thickness / 2f + touchPadding) {
+                            return@mapNotNull null
+                        }
+                        val minutePadding = Math.toDegrees(
+                            atan2(touchPadding.toDouble(), band.centerRadius.toDouble()),
+                        ) * 4.0
+                        if (!CalendarHitTesting.containsMinute(
+                                minute, segment.startMinute, segment.endMinuteExclusive, minutePadding,
+                            )) return@mapNotNull null
+                        event to kotlin.math.abs(radius - band.centerRadius)
+                    }
+                    .sortedBy { it.second }
+                    .map { it.first }
+                    .toList()
+            }
+            ViewState.GALACTIC -> emptyList()
+        }
+    }
+
+    private fun beginEventInspection(x: Float, y: Float): Boolean {
+        val hits = calendarEventsAt(x, y)
+        if (hits.isEmpty()) return false
+        dragMode = DragMode.EVENT
+        inspectedCandidates = hits
+        inspectedCandidateIndex = 0
+        inspectedEvent = hits.first()
+        eventCycleAnchorX = x
+        eventCycleAnchorY = y
+        parent?.requestDisallowInterceptTouchEvent(true)
+        invalidate()
+        return true
+    }
+
+    private fun updateEventInspection(x: Float, y: Float) {
+        val hits = calendarEventsAt(x, y)
+        if (hits.isEmpty()) return
+        if (hits != inspectedCandidates) {
+            inspectedCandidates = hits
+            inspectedCandidateIndex = 0
+            inspectedEvent = hits.first()
+            eventCycleAnchorX = x
+            eventCycleAnchorY = y
+        } else if (hits.size > 1 && distance(x, y, eventCycleAnchorX, eventCycleAnchorY) >= 18f * density) {
+            inspectedCandidateIndex = (inspectedCandidateIndex + 1) % hits.size
+            inspectedEvent = hits[inspectedCandidateIndex]
+            eventCycleAnchorX = x
+            eventCycleAnchorY = y
+        }
+        invalidate()
+    }
+
+    private fun finishInteraction() {
+        if (dragMode == DragMode.EVENT) {
+            inspectedEvent = null
+            inspectedCandidates = emptyList()
+            inspectedCandidateIndex = 0
+        }
+        dragMode = DragMode.NONE
+        dragStarted = false
+        parent?.requestDisallowInterceptTouchEvent(false)
+        invalidate()
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val (cx, cy, r) = geometry()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                if (transitionFrom != null) return true
                 if (event.x < 64f * density && event.y < 64f * density) {
                     onMenuRequested?.invoke(); return true
                 }
                 if (!realtime && event.y > height - 75f * density && event.x in width * .2f..width * .8f) {
                     resetNow(); return true
                 }
+                if (beginEventInspection(event.x, event.y)) return true
                 val radiusFromCenter = distance(event.x, event.y, cx, cy)
                 if (state == ViewState.HELIOCENTRIC && distance(event.x, event.y, earthPoint.first, earthPoint.second) < r * .09f) {
-                    dragMode = DragMode.YEAR; realtime = false; updateYearDrag(event.x, event.y); return true
+                    dragMode = DragMode.YEAR
+                    dragStartX = event.x
+                    dragStartY = event.y
+                    dragStarted = false
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return true
                 }
                 if (state == ViewState.HELIOCENTRIC && radiusFromCenter < r * .13f) {
                     switchToState(ViewState.GEOCENTRIC); return true
                 }
                 if (state == ViewState.GEOCENTRIC && distance(event.x, event.y, moonPoint.first, moonPoint.second) < r * .09f) {
-                    dragMode = DragMode.MOON; realtime = false; updateMoonDrag(event.x, event.y); return true
+                    dragMode = DragMode.MOON
+                    dragStartX = event.x
+                    dragStartY = event.y
+                    dragStarted = false
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return true
                 }
                 if (state == ViewState.GEOCENTRIC && radiusFromCenter in r * .53f..r * .75f) {
                     val touchAngle = Math.toDegrees(atan2((event.y - cy).toDouble(), (event.x - cx).toDouble()))
@@ -1138,9 +1395,6 @@ class SundialView(context: Context) : View(context) {
                     performClick()
                     return true
                 }
-                if (state == ViewState.HELIOCENTRIC && radiusFromCenter > r * .78f) {
-                    dragMode = DragMode.YEAR; realtime = false; updateYearDrag(event.x, event.y); return true
-                }
                 if (state == ViewState.GEOCENTRIC && radiusFromCenter < r * .48f) {
                     switchToState(ViewState.HELIOCENTRIC); return true
                 }
@@ -1148,16 +1402,29 @@ class SundialView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_MOVE -> {
                 when (dragMode) {
-                    DragMode.YEAR -> updateYearDrag(event.x, event.y)
-                    DragMode.MOON -> updateMoonDrag(event.x, event.y)
+                    DragMode.YEAR -> {
+                        if (dragStarted || distance(event.x, event.y, dragStartX, dragStartY) >= 8f * density) {
+                            dragStarted = true
+                            realtime = false
+                            updateYearDrag(event.x, event.y)
+                        }
+                    }
+                    DragMode.MOON -> {
+                        if (dragStarted || distance(event.x, event.y, dragStartX, dragStartY) >= 8f * density) {
+                            dragStarted = true
+                            realtime = false
+                            updateMoonDrag(event.x, event.y)
+                        }
+                    }
+                    DragMode.EVENT -> updateEventInspection(event.x, event.y)
                     DragMode.NONE -> Unit
                 }
             }
             MotionEvent.ACTION_UP -> {
-                dragMode = DragMode.NONE
+                finishInteraction()
                 performClick()
             }
-            MotionEvent.ACTION_CANCEL -> dragMode = DragMode.NONE
+            MotionEvent.ACTION_CANCEL -> finishInteraction()
         }
         return true
     }
@@ -1190,6 +1457,9 @@ class SundialView(context: Context) : View(context) {
         transitionFrom = null
         transitionStartedAt = 0L
         dragMode = DragMode.NONE
+        dragStarted = false
+        inspectedEvent = null
+        inspectedCandidates = emptyList()
         val (cx, cy, r) = geometry()
         val earthAngle = annualAngle(Astronomy.civilYearFraction(selectedInstant.atZone(zone)))
         earthPoint = point(cx, cy, r * DialGeometry.EARTH_ORBIT, earthAngle)

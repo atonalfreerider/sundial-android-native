@@ -36,9 +36,9 @@ class EarthSphereRenderer(private val source: Bitmap) {
         source.getPixels(texturePixels, 0, source.width, 0, 0, source.width, source.height)
         val rotation = Math.toRadians(bucket / 2.0)
         val tilt = Math.toRadians(23.43928)
-        // In geocentric view the Sun is above Earth. A broad frontal component keeps the texture
-        // legible while the positive screen-Y component produces a visible, moving day/night form.
-        val light = doubleArrayOf(0.08, 0.61, 0.79)
+        // The camera is over solar north and the Sun is at the top of the instrument. Keep a small
+        // camera-facing component for relief, but let the in-plane component form a real terminator.
+        val light = doubleArrayOf(0.03, 0.93, 0.365)
         val center = (safeSize - 1) / 2.0
         val radius = safeSize * 0.485
 
