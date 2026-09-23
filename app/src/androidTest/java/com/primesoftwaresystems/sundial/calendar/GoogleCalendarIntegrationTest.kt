@@ -9,6 +9,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.FileInputStream
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -19,9 +20,17 @@ import java.time.ZoneId
 @RunWith(AndroidJUnit4::class)
 class GoogleCalendarIntegrationTest {
     @Test fun syncedCalendarProviderRoundTrip() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+            val command = instrumentation.uiAutomation.executeShellCommand(
+                "pm grant ${context.packageName} ${Manifest.permission.READ_CALENDAR}",
+            )
+            FileInputStream(command.fileDescriptor).bufferedReader().use { it.readText() }
+            command.close()
+        }
         assertEquals(
-            "Grant READ_CALENDAR to the target app before this device test",
+            "The deployment test must be able to grant READ_CALENDAR",
             PackageManager.PERMISSION_GRANTED,
             context.checkSelfPermission(Manifest.permission.READ_CALENDAR),
         )

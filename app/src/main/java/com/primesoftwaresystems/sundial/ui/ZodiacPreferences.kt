@@ -43,15 +43,29 @@ object ZodiacPreferences {
         )
     }
 
-    fun set(context: Context, profile: ZodiacProfile) {
+    /**
+     * Saves profile controls without allowing a partial UI update to erase natal data. There is
+     * deliberately no implicit "clear" operation: birthday and time remain until the user replaces
+     * them through their respective editors.
+     */
+    fun set(context: Context, profile: ZodiacProfile): ZodiacProfile {
+        val existing = get(context)
+        val preserved = preserveNatalData(profile, existing)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(OPT_IN_VERSION, 1)
-            .putBoolean(ENABLED, profile.enabled)
-            .putString(BIRTH_DATE, profile.birthDate?.toString())
-            .putString(BIRTH_TIME, profile.birthTime?.toString())
-            .putString(SIGN, profile.selectedSign?.name)
+            .putBoolean(ENABLED, preserved.enabled)
+            .putString(BIRTH_DATE, preserved.birthDate?.toString())
+            .putString(BIRTH_TIME, preserved.birthTime?.toString())
+            .putString(SIGN, preserved.selectedSign?.name)
             .apply()
+        return preserved
     }
+
+    internal fun preserveNatalData(requested: ZodiacProfile, stored: ZodiacProfile): ZodiacProfile =
+        requested.copy(
+            birthDate = requested.birthDate ?: stored.birthDate,
+            birthTime = requested.birthTime ?: stored.birthTime,
+        )
 
     fun setHoroscope(context: Context, profile: ZodiacProfile, date: LocalDate, text: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

@@ -23,4 +23,18 @@ class ZodiacProfileTest {
         assertEquals(Zodiac.Sign.SCORPIO, profile.resolvedSign())
         assertTrue(profile.isComplete)
     }
+
+    @Test fun `mode-only updates cannot erase stored birth date and time`() {
+        val stored = ZodiacProfile(
+            enabled = true,
+            birthDate = LocalDate.of(1984, 2, 29),
+            birthTime = LocalTime.of(23, 7),
+        )
+
+        val result = ZodiacPreferences.preserveNatalData(ZodiacProfile(enabled = false), stored)
+
+        assertFalse(result.enabled)
+        assertEquals(stored.birthDate, result.birthDate)
+        assertEquals(stored.birthTime, result.birthTime)
+    }
 }

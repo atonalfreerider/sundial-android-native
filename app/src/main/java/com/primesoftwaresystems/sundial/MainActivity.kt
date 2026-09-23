@@ -196,12 +196,11 @@ class MainActivity : Activity() {
     }
 
     private fun updateZodiacProfile(profile: ZodiacProfile) {
-        zodiacProfile = profile
-        ZodiacPreferences.set(this, profile)
-        sundialView.setZodiacProfile(profile)
-        drawerView.setZodiacProfile(profile)
+        zodiacProfile = ZodiacPreferences.set(this, profile)
+        sundialView.setZodiacProfile(zodiacProfile)
+        drawerView.setZodiacProfile(zodiacProfile)
         drawerView.setHoroscopeStatus(
-            if (profile.isComplete) "Birth details stay on this device. Generate a fresh daily reading."
+            if (zodiacProfile.isComplete) "Birth details stay on this device. Generate a fresh daily reading."
             else "Set birthday and birth time to enable the private on-device horoscope."
         )
         refreshWallpapers()

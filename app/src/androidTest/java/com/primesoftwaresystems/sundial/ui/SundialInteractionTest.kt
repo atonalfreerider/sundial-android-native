@@ -70,6 +70,23 @@ class SundialInteractionTest {
         }
     }
 
+    @Test fun galacticTimeOnlyMovesAfterDraggingTheSunAlongTravelAxis() {
+        onLaidOutView { view ->
+            view.setGalacticVisible(true)
+            val render = Bitmap.createBitmap(1_080, 2_424, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(render))
+            render.recycle()
+            val sun = view.sunPointForTest
+            val before = view.selectedInstantForTest
+
+            send(view, MotionEvent.ACTION_DOWN, sun.first, sun.second)
+            assertEquals("Pressing the galactic Sun must not jump time", before, view.selectedInstantForTest)
+            send(view, MotionEvent.ACTION_MOVE, sun.first + 145f, sun.second + 230f)
+            assertNotEquals("Dragging the galactic Sun must scrub time", before, view.selectedInstantForTest)
+            send(view, MotionEvent.ACTION_UP, sun.first + 145f, sun.second + 230f)
+        }
+    }
+
     private fun onLaidOutView(block: (SundialView) -> Unit) {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val context = InstrumentationRegistry.getInstrumentation().targetContext

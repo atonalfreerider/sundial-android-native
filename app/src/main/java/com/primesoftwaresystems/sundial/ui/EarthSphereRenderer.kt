@@ -2,12 +2,11 @@ package com.primesoftwaresystems.sundial.ui
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.asin
 import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.pow
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -16,16 +15,18 @@ import kotlin.math.sqrt
  */
 class EarthSphereRenderer(private val source: Bitmap) {
     private var cachedSize = 0
-    private var cachedRotationBucket = Int.MIN_VALUE
+    private var cachedTimeBucket = Long.MIN_VALUE
     private var cachedNorth = true
     private var cached: Bitmap? = null
-    private val retainedFrames = ArrayDeque<Bitmap>(12)
+    // Hardware display lists may retain several old frames. Strongly retaining the recent bitmaps
+    // prevents a driver from briefly sampling reclaimed storage during fast time scrubbing.
+    private val retainedFrames = ArrayDeque<Bitmap>(48)
 
-    fun render(size: Int, rotationDegrees: Double, north: Boolean): Bitmap {
+    fun render(size: Int, instant: Instant, north: Boolean): Bitmap {
         val safeSize = size.coerceIn(48, 420)
-        val bucket = (rotationDegrees * 2.0).toInt() // half-degree cache resolution
+        val bucket = instant.epochSecond / 30L
         cached?.let {
-            if (cachedSize == safeSize && cachedRotationBucket == bucket && cachedNorth == north) return it
+            if (cachedSize == safeSize && cachedTimeBucket == bucket && cachedNorth == north) return it
         }
 
         // Do not recycle or mutate the previous frame: a hardware Canvas display list can still
@@ -34,11 +35,7 @@ class EarthSphereRenderer(private val source: Bitmap) {
         val pixels = IntArray(safeSize * safeSize)
         val texturePixels = IntArray(source.width * source.height)
         source.getPixels(texturePixels, 0, source.width, 0, 0, source.width, source.height)
-        val rotation = Math.toRadians(bucket / 2.0)
-        val tilt = Math.toRadians(23.43928)
-        // The camera is over solar north and the Sun is at the top of the instrument. Keep a small
-        // camera-facing component for relief, but let the in-plane component form a real terminator.
-        val light = doubleArrayOf(0.03, 0.93, 0.365)
+        val frame = EarthOrientation.frame(instant, north)
         val center = (safeSize - 1) / 2.0
         val radius = safeSize * 0.485
 
@@ -50,31 +47,28 @@ class EarthSphereRenderer(private val source: Bitmap) {
                 if (rr > 1.0) continue
                 val sz = sqrt(1.0 - rr)
 
-                // Camera looks down from ecliptic north/south. Earth's geographic pole is offset
-                // by its 23.4° obliquity, so it appears above center instead of facing the camera.
-                val sign = if (north) 1.0 else -1.0
-                val worldX = sx
-                val worldY = sy * sign * sin(tilt) + sz * sign * cos(tilt)
-                val worldZ = sy * -cos(tilt) + sz * sin(tilt)
-                val rx = worldX * cos(rotation) - worldZ * sin(rotation)
-                val rz = worldX * sin(rotation) + worldZ * cos(rotation)
-                val longitude = atan2(rx, rz)
-                val latitude = asin(worldY.coerceIn(-1.0, 1.0))
+                val surface = frame.right * sx + frame.sunward * sy + frame.viewer * sz
+                val latitude = asin(surface.dot(frame.northPole).coerceIn(-1.0, 1.0))
+                val longitude = atan2(
+                    surface.dot(frame.eastAtPrimeMeridian),
+                    surface.dot(frame.primeMeridian),
+                )
                 val u = ((longitude / (2.0 * PI) + 0.5) * source.width).toInt().floorMod(source.width)
                 val v = ((0.5 - latitude / PI) * (source.height - 1)).toInt().coerceIn(0, source.height - 1)
                 val sample = texturePixels[v * source.width + u]
 
-                val rawDiffuse = sx * light[0] + sy * light[1] + sz * light[2]
-                val diffuse = ((rawDiffuse + 0.12) / 1.12).coerceIn(0.0, 1.0)
+                // From solar north, sunlight is exactly in the screen plane. This produces the
+                // required half-lit globe and a terminator through its center.
+                val diffuse = sy.coerceIn(0.0, 1.0)
                 val rim = (1.0 - sz).pow(2.6)
-                val illumination = (0.64 + diffuse * 0.36).coerceAtMost(1.0)
+                val illumination = (0.10 + diffuse * 0.90).coerceAtMost(1.0)
                 val atmosphere = (rim * 72).toInt()
                 // The satellite texture has near-black oceans. Lift its photographic floor before
                 // lighting so every longitude still reads as Earth, while the terminator remains.
                 fun lift(channel: Int) = 255.0 * (channel / 255.0).pow(0.52)
-                val red = (lift(Color.red(sample)) * illumination + 28 + atmosphere * 0.32).toInt().coerceIn(0, 255)
-                val green = (lift(Color.green(sample)) * illumination + 38 + atmosphere * 0.52).toInt().coerceIn(0, 255)
-                val blue = (lift(Color.blue(sample)) * illumination + 54 + atmosphere).toInt().coerceIn(0, 255)
+                val red = (lift(Color.red(sample)) * illumination + 10 + atmosphere * 0.32).toInt().coerceIn(0, 255)
+                val green = (lift(Color.green(sample)) * illumination + 14 + atmosphere * 0.52).toInt().coerceIn(0, 255)
+                val blue = (lift(Color.blue(sample)) * illumination + 20 + atmosphere).toInt().coerceIn(0, 255)
                 val edgeAlpha = ((1.0 - ((rr - 0.94) / 0.06).coerceIn(0.0, 1.0)) * 255).toInt()
                 pixels[py * safeSize + px] = Color.argb(edgeAlpha, red, green, blue)
             }
@@ -82,11 +76,11 @@ class EarthSphereRenderer(private val source: Bitmap) {
         output.setPixels(pixels, 0, safeSize, 0, 0, safeSize, safeSize)
         cached?.let {
             retainedFrames.addLast(it)
-            while (retainedFrames.size > 12) retainedFrames.removeFirst()
+            while (retainedFrames.size > 48) retainedFrames.removeFirst()
         }
         cached = output
         cachedSize = safeSize
-        cachedRotationBucket = bucket
+        cachedTimeBucket = bucket
         cachedNorth = north
         return output
     }

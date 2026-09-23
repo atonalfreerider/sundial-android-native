@@ -1,6 +1,7 @@
 package com.primesoftwaresystems.sundial
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,21 +39,27 @@ class MainActivityLaunchTest {
 
     @Test fun wallpaperFrameRendersHeliocentricViewWithoutApplicationChrome() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val bitmap = SundialView(context).renderWallpaperBitmap(
-                360,
-                800,
-                Instant.parse("2024-02-29T12:00:00Z"),
-            )
-            try {
-                val corner = bitmap.getPixel(12, 12)
-                assertTrue("Void background should remain dark without being flat black",
-                    Color.red(corner) + Color.green(corner) + Color.blue(corner) < 80)
-                val sun = bitmap.getPixel(180, (800 * .47f).toInt())
-                assertTrue("Wallpaper Sun should be luminous", Color.red(sun) > 160)
-            } finally {
-                bitmap.recycle()
+        val originalStyle = CelestialStylePreferences.get(context)
+        CelestialStylePreferences.set(context, CelestialStyle.VOID_BLACK)
+        try {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val bitmap = SundialView(context).renderWallpaperBitmap(
+                    360,
+                    800,
+                    Instant.parse("2024-02-29T12:00:00Z"),
+                )
+                try {
+                    val corner = bitmap.getPixel(12, 12)
+                    assertTrue("Void background should remain dark without being flat black",
+                        Color.red(corner) + Color.green(corner) + Color.blue(corner) < 80)
+                    val sun = bitmap.getPixel(180, (800 * .47f).toInt())
+                    assertTrue("Wallpaper Sun should be luminous", Color.red(sun) > 160)
+                } finally {
+                    bitmap.recycle()
+                }
             }
+        } finally {
+            CelestialStylePreferences.set(context, originalStyle)
         }
     }
 
@@ -83,6 +90,36 @@ class MainActivityLaunchTest {
         } finally {
             CelestialStylePreferences.set(context, originalStyle)
             DailyWallpaperScheduler.setUseLockScreen(context, originalLockSetting)
+        }
+    }
+
+    @Test fun earthRemainsVisibleAcrossRepeatedGeocentricFramesAndReset() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val view = SundialView(context)
+            val start = Instant.parse("2026-09-22T00:00:00Z")
+            repeat(10) { index ->
+                val bitmap = view.renderWallpaperBitmap(
+                    360, 800, start.plusSeconds(index * 7_200L), SundialView.ViewState.GEOCENTRIC,
+                )
+                try {
+                    val center = bitmap.getPixel(180, (800 * .47f).toInt())
+                    assertTrue("Earth frame $index disappeared",
+                        Color.red(center) + Color.green(center) + Color.blue(center) > 35)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            view.resetNow()
+            val resetFrame = Bitmap.createBitmap(360, 800, Bitmap.Config.ARGB_8888)
+            try {
+                view.draw(android.graphics.Canvas(resetFrame))
+                val center = resetFrame.getPixel(180, (800 * .47f).toInt())
+                assertTrue("Earth disappeared after reset",
+                    Color.red(center) + Color.green(center) + Color.blue(center) > 35)
+            } finally {
+                resetFrame.recycle()
+            }
         }
     }
 }
