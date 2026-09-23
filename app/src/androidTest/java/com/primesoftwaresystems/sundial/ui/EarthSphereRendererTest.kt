@@ -31,5 +31,12 @@ class EarthSphereRendererTest {
         val southernCenter = southern.getPixel(southern.width / 2, southern.height / 2)
         assertTrue("South-pole Earth center must remain visible",
             Color.red(southernCenter) + Color.green(southernCenter) + Color.blue(southernCenter) > 85)
+
+        repeat(14) { index ->
+            val frame = renderer.render(256, index * 23.0, north = true)
+            val pixel = frame.getPixel(frame.width / 2, frame.height / 2)
+            assertFalse("Earth frame $index must not disappear", frame.isRecycled)
+            assertTrue(Color.red(pixel) + Color.green(pixel) + Color.blue(pixel) > 85)
+        }
     }
 }

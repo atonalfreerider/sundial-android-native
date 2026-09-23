@@ -84,7 +84,7 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
             letterSpacing = .03f
             setPadding(0, dp(4), 0, dp(8))
         })
-        birthdayAction = action("BIRTHDAY · NOT SET", "Choose birthday") { onBirthDateRequested?.invoke() }
+        birthdayAction = action("BIRTHDAY · NOT SET", "Type birthday as month, day, and four digit year") { onBirthDateRequested?.invoke() }
         birthTimeAction = action("BIRTH TIME · NOT SET", "Choose birth time") { onBirthTimeRequested?.invoke() }
         zodiacSignAction = action("SUN SIGN · NOT SET", "Choose zodiac sign") { onZodiacSignRequested?.invoke() }
         horoscopeAction = action("GENERATE ON-DEVICE HOROSCOPE", "Write today's private horoscope with Gemini Nano") {

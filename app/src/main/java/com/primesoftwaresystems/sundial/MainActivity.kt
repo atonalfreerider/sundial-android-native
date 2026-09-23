@@ -3,14 +3,19 @@ package com.primesoftwaresystems.sundial
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.text.InputFilter
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
@@ -18,6 +23,7 @@ import com.primesoftwaresystems.sundial.calendar.CalendarRepository
 import com.primesoftwaresystems.sundial.astronomy.Zodiac
 import com.primesoftwaresystems.sundial.horoscope.HoroscopeGenerator
 import com.primesoftwaresystems.sundial.ui.AstralDrawerView
+import com.primesoftwaresystems.sundial.ui.BirthDateInput
 import com.primesoftwaresystems.sundial.ui.SundialView
 import com.primesoftwaresystems.sundial.ui.ZodiacPreferences
 import com.primesoftwaresystems.sundial.ui.ZodiacProfile
@@ -202,13 +208,80 @@ class MainActivity : Activity() {
 
     private fun showBirthDatePicker() {
         val initial = zodiacProfile.birthDate ?: LocalDate.now().minusYears(30)
-        DatePickerDialog(this, { _, year, month, day ->
-            val date = LocalDate.of(year, month + 1, day)
-            updateZodiacProfile(zodiacProfile.copy(birthDate = date, selectedSign = Zodiac.signFor(date)))
-        }, initial.year, initial.monthValue - 1, initial.dayOfMonth).apply {
-            datePicker.maxDate = System.currentTimeMillis()
-            setTitle("Birth date")
-        }.show()
+        val instruction = TextView(this).apply {
+            text = "Type month, day, and a 4-digit year. Then tap Save Birth Date."
+            textSize = 15f
+            setTextColor(0xFF383838.toInt())
+            setPadding(0, 0, 0, dp(14))
+        }
+        fun dateField(value: Int, hintValue: String, digits: Int) = EditText(this).apply {
+            setText(value.toString().padStart(if (digits == 4) 4 else 2, '0'))
+            hint = hintValue
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(digits))
+            maxLines = 1
+            setSelectAllOnFocus(true)
+            textSize = 21f
+            gravity = Gravity.CENTER
+            contentDescription = when (hintValue) {
+                "MM" -> "Birth month"
+                "DD" -> "Birth day"
+                else -> "Four digit birth year"
+            }
+        }
+        val monthInput = dateField(initial.monthValue, "MM", 2)
+        val dayInput = dateField(initial.dayOfMonth, "DD", 2)
+        val yearInput = dateField(initial.year, "YYYY", 4)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(monthInput, LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) })
+            addView(dayInput, LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) })
+            addView(yearInput, LinearLayout.LayoutParams(0, dp(58), 1.65f))
+        }
+        fun dateLabel(value: String) = TextView(this).apply {
+            text = value
+            textSize = 11f
+            setTextColor(0xFF676767.toInt())
+            gravity = Gravity.CENTER
+        }
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(dateLabel("MONTH"), LinearLayout.LayoutParams(0, dp(28), 1f).apply { marginEnd = dp(6) })
+            addView(dateLabel("DAY"), LinearLayout.LayoutParams(0, dp(28), 1f).apply { marginEnd = dp(6) })
+            addView(dateLabel("YEAR"), LinearLayout.LayoutParams(0, dp(28), 1.65f))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(4), dp(24), 0)
+            addView(instruction)
+            addView(row)
+            addView(labels)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Enter birth date")
+            .setView(content)
+            .setPositiveButton("SAVE BIRTH DATE", null)
+            .setNegativeButton("CANCEL", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(94, 55, 8))
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(68, 68, 68))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                runCatching {
+                    BirthDateInput.parse(monthInput.text.toString(), dayInput.text.toString(), yearInput.text.toString())
+                }.onSuccess { date ->
+                    updateZodiacProfile(zodiacProfile.copy(birthDate = date, selectedSign = Zodiac.signFor(date)))
+                    dialog.dismiss()
+                }.onFailure { error ->
+                    instruction.text = error.message ?: "Enter a valid birth date"
+                    instruction.setTextColor(Color.rgb(176, 35, 35))
+                }
+            }
+            monthInput.requestFocus()
+        }
+        dialog.show()
     }
 
     private fun showBirthTimePicker() {

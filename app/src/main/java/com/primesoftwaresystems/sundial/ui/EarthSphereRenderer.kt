@@ -19,7 +19,7 @@ class EarthSphereRenderer(private val source: Bitmap) {
     private var cachedRotationBucket = Int.MIN_VALUE
     private var cachedNorth = true
     private var cached: Bitmap? = null
-    private val retainedFrames = ArrayDeque<Bitmap>(2)
+    private val retainedFrames = ArrayDeque<Bitmap>(12)
 
     fun render(size: Int, rotationDegrees: Double, north: Boolean): Bitmap {
         val safeSize = size.coerceIn(48, 420)
@@ -67,14 +67,14 @@ class EarthSphereRenderer(private val source: Bitmap) {
                 val rawDiffuse = sx * light[0] + sy * light[1] + sz * light[2]
                 val diffuse = ((rawDiffuse + 0.12) / 1.12).coerceIn(0.0, 1.0)
                 val rim = (1.0 - sz).pow(2.6)
-                val illumination = (0.34 + diffuse * 0.70).coerceAtMost(1.0)
+                val illumination = (0.64 + diffuse * 0.36).coerceAtMost(1.0)
                 val atmosphere = (rim * 72).toInt()
                 // The satellite texture has near-black oceans. Lift its photographic floor before
                 // lighting so every longitude still reads as Earth, while the terminator remains.
-                fun lift(channel: Int) = 255.0 * (channel / 255.0).pow(0.68)
-                val red = (lift(Color.red(sample)) * illumination + atmosphere * 0.32).toInt().coerceIn(0, 255)
-                val green = (lift(Color.green(sample)) * illumination + atmosphere * 0.52).toInt().coerceIn(0, 255)
-                val blue = (lift(Color.blue(sample)) * illumination + atmosphere).toInt().coerceIn(0, 255)
+                fun lift(channel: Int) = 255.0 * (channel / 255.0).pow(0.52)
+                val red = (lift(Color.red(sample)) * illumination + 28 + atmosphere * 0.32).toInt().coerceIn(0, 255)
+                val green = (lift(Color.green(sample)) * illumination + 38 + atmosphere * 0.52).toInt().coerceIn(0, 255)
+                val blue = (lift(Color.blue(sample)) * illumination + 54 + atmosphere).toInt().coerceIn(0, 255)
                 val edgeAlpha = ((1.0 - ((rr - 0.94) / 0.06).coerceIn(0.0, 1.0)) * 255).toInt()
                 pixels[py * safeSize + px] = Color.argb(edgeAlpha, red, green, blue)
             }
@@ -82,7 +82,7 @@ class EarthSphereRenderer(private val source: Bitmap) {
         output.setPixels(pixels, 0, safeSize, 0, 0, safeSize, safeSize)
         cached?.let {
             retainedFrames.addLast(it)
-            while (retainedFrames.size > 2) retainedFrames.removeFirst()
+            while (retainedFrames.size > 12) retainedFrames.removeFirst()
         }
         cached = output
         cachedSize = safeSize
