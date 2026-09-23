@@ -113,6 +113,8 @@ class SundialView(context: Context) : View(context) {
     private var transitionStartedAt = 0L
     private var transitionEarthPoint = Pair(0f, 0f)
     private var transitionCameraRotation = 0f
+    /** Rotation applied by an enclosing camera transform, so rotated labels still read upright. */
+    private var textScreenRotation = 0.0
     private var dragStartX = 0f
     private var dragStartY = 0f
     private var dragStarted = false
@@ -314,15 +316,29 @@ class SundialView(context: Context) : View(context) {
         }
         val geocentricAlpha = (progress / .22f).coerceIn(0f, 1f)
 
-        if (heliocentricAlpha > .01f) {
-            val checkpoint = canvas.saveLayerAlpha(
-                0f, 0f, width.toFloat(), height.toFloat(), (heliocentricAlpha * 255).toInt(),
-            )
+        val (_, _, r) = geometry()
+        fun heliocentricCamera() {
             canvas.translate(targetX, targetY)
             canvas.rotate(cameraRotation)
             canvas.scale(frame.cameraScale, frame.cameraScale)
             canvas.translate(-transitionEarthPoint.first, -transitionEarthPoint.second)
-            drawState(canvas, ViewState.HELIOCENTRIC)
+        }
+        // The annual sprocket stays visible from the Earth camera, so it rides the camera at full
+        // opacity and lands exactly where the Earth view draws it.
+        canvas.save()
+        heliocentricCamera()
+        withTextScreenRotation(cameraRotation.toDouble()) { drawAnnualBackdrop(canvas, cx, cy, r) }
+        canvas.restore()
+
+        if (heliocentricAlpha > .01f) {
+            val checkpoint = canvas.saveLayerAlpha(
+                0f, 0f, width.toFloat(), height.toFloat(), (heliocentricAlpha * 255).toInt(),
+            )
+            heliocentricCamera()
+            withTextScreenRotation(cameraRotation.toDouble()) {
+                drawSeasonShading(canvas, cx, cy, r)
+                drawHeliocentricForeground(canvas, cx, cy, r, includeSun = false)
+            }
             canvas.restoreToCount(checkpoint)
         }
 
@@ -333,9 +349,21 @@ class SundialView(context: Context) : View(context) {
             canvas.translate(targetX, targetY)
             canvas.scale(frame.earthSystemScale, frame.earthSystemScale)
             canvas.translate(-cx, -cy)
-            drawState(canvas, ViewState.GEOCENTRIC)
+            drawGeocentric(canvas, includeBackdrop = false, includeSun = false)
             canvas.restoreToCount(checkpoint)
         }
+
+        // One Sun for the whole flight: it follows the camera from the dial centre to the top of
+        // the Earth view instead of cross-fading between two differently scaled copies.
+        val sunOffsetX = (cx - transitionEarthPoint.first) * frame.cameraScale
+        val sunOffsetY = (cy - transitionEarthPoint.second) * frame.cameraScale
+        val cameraRadians = Math.toRadians(cameraRotation.toDouble())
+        drawSunBloom(
+            canvas,
+            targetX + (sunOffsetX * cos(cameraRadians) - sunOffsetY * sin(cameraRadians)).toFloat(),
+            targetY + (sunOffsetX * sin(cameraRadians) + sunOffsetY * cos(cameraRadians)).toFloat(),
+            r * lerp(.052f, .058f, progress),
+        )
     }
 
     private fun drawTransformedState(
@@ -362,7 +390,7 @@ class SundialView(context: Context) : View(context) {
         if ((state == ViewState.HELIOCENTRIC && newState == ViewState.GEOCENTRIC) ||
             (state == ViewState.GEOCENTRIC && newState == ViewState.HELIOCENTRIC)) {
             val (cx, cy, r) = geometry()
-            val earthAngle = annualAngle(Astronomy.civilYearFraction(selectedInstant.atZone(zone)))
+            val earthAngle = currentEarthAngle()
             val calculatedEarthPoint = point(cx, cy, r * DialGeometry.EARTH_ORBIT, earthAngle)
             transitionEarthPoint = if (
                 state == ViewState.HELIOCENTRIC && earthPoint.first.isFinite() && earthPoint.second.isFinite() &&
@@ -411,17 +439,36 @@ class SundialView(context: Context) : View(context) {
     private fun drawHeliocentric(canvas: Canvas) {
         val (cx, cy, r) = geometry()
         drawSeasonShading(canvas, cx, cy, r)
+        drawAnnualBackdrop(canvas, cx, cy, r)
+        drawHeliocentricForeground(canvas, cx, cy, r)
+    }
+
+    /**
+     * Parts of the Sun-centred instrument that Unity kept on screen after the camera flew to the
+     * Earth: the annual sprocket, season cross and the Earth spike that points at today's date.
+     */
+    private fun drawAnnualBackdrop(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         drawReverseSeasonRing(canvas, cx, cy, r)
         drawAnnualDial(canvas, cx, cy, r)
-        if (zodiacProfile.enabled) drawZodiacRing(canvas, cx, cy, r)
         drawSeasonCross(canvas, cx, cy, r)
+        // Unity's Earth line: a translucent spike from the Sun through the Earth to the annual dial.
+        drawDialTriangle(canvas, cx, cy, r * .99f, currentEarthAngle(), r * .025f, withAlpha(instrumentColor, 77))
+    }
+
+    private fun drawHeliocentricForeground(canvas: Canvas, cx: Float, cy: Float, r: Float, includeSun: Boolean = true) {
+        if (zodiacProfile.enabled) drawZodiacRing(canvas, cx, cy, r)
         if (zodiacProfile.enabled) drawPlanetZodiacHands(canvas, cx, cy, r)
         drawOrbitPaths(canvas, cx, cy, r)
         drawCalendarYearEvents(canvas, cx, cy, r)
-        drawSunBloom(canvas, cx, cy, r * 0.052f)
+        if (includeSun) drawSunBloom(canvas, cx, cy, r * 0.052f)
         text.textSize = r * 0.086f
         canvas.drawText("S U N : D I A L", cx, cy - r * 0.56f, text)
     }
+
+    private fun currentEarthAngle(): Double = annualAngle(Astronomy.civilYearFraction(selectedInstant.atZone(zone)))
+
+    /** Heliocentric longitude → canvas angle, sharing the annual dial's frame. */
+    private fun eclipticAngle(longitudeDegrees: Double): Double = DialGeometry.eclipticAngle(longitudeDegrees, north)
 
     private fun drawSeasonShading(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         val date = selectedInstant.atZone(zone).toLocalDate()
@@ -539,15 +586,14 @@ class SundialView(context: Context) : View(context) {
     }
 
     private fun drawPlanetZodiacHands(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val earthAngle = annualAngle(Astronomy.civilYearFraction(selectedInstant.atZone(zone)))
-        val earth = point(cx, cy, r * DialGeometry.EARTH_ORBIT, earthAngle)
+        val earth = point(cx, cy, r * DialGeometry.EARTH_ORBIT, currentEarthAngle())
         val bodies = listOf(
             Triple(Astronomy.Body.MERCURY, DialGeometry.MERCURY_ORBIT, 0xFF8EA5B8.toInt()),
             Triple(Astronomy.Body.VENUS, DialGeometry.VENUS_ORBIT, 0xFFFFCE7A.toInt()),
         )
         bodies.forEach { (body, orbitRatio, color) ->
             val heliocentricLongitude = Astronomy.heliocentricPosition(body, selectedInstant).longitudeDegrees
-            val planetAngle = if (north) 90.0 - heliocentricLongitude else heliocentricLongitude - 90.0
+            val planetAngle = eclipticAngle(heliocentricLongitude)
             val planet = point(cx, cy, r * orbitRatio, planetAngle)
             val longitude = Zodiac.geocentricLongitude(body, selectedInstant)
             val sign = Zodiac.signForLongitude(longitude)
@@ -641,7 +687,8 @@ class SundialView(context: Context) : View(context) {
         for (dayIndex in 0 until days) {
             val date = LocalDate.ofYearDay(year, dayIndex + 1)
             val monthStart = date.dayOfMonth == 1
-            val week = date.dayOfMonth % 7 == 0
+            // Unity's sun sprocket gives every Sunday a medium tick.
+            val week = date.dayOfWeek == java.time.DayOfWeek.SUNDAY
             val length = when { monthStart -> r * 0.062f; week -> r * 0.036f; else -> r * 0.019f }
             val angle = annualAngle(dayIndex.toDouble() / days)
             white.color = withAlpha(instrumentColor, if (monthStart) 255 else if (week) 205 else 145)
@@ -667,12 +714,13 @@ class SundialView(context: Context) : View(context) {
     }
 
     private fun drawSeasonCross(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = withAlpha(instrumentColor, 100) }
-        for (i in -12..12) {
-            val q = i / 12f
-            val size = if (i % 3 == 0) r * .0031f else r * .0018f
-            canvas.drawCircle(cx, cy + q * r * .86f, size, dotPaint)
-            canvas.drawCircle(cx + q * r * .86f, cy, size, dotPaint)
+        // Unity: dotted solstice and equinox lines spanning the full dial, 45 dots per diameter.
+        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = withAlpha(instrumentColor, 128) }
+        val spacing = 2f * r / 45f
+        val size = maxOf(.9f * density, r * .0028f)
+        for (i in -22..22) {
+            canvas.drawCircle(cx, cy + i * spacing, size, dotPaint)
+            canvas.drawCircle(cx + i * spacing, cy, size, dotPaint)
         }
     }
 
@@ -683,43 +731,64 @@ class SundialView(context: Context) : View(context) {
             Astronomy.Body.EARTH to r * DialGeometry.EARTH_ORBIT,
             Astronomy.Body.MARS to r * DialGeometry.MARS_ORBIT,
         )
-        val colors = mapOf(
-            Astronomy.Body.MERCURY to Color.rgb(110, 135, 158),
-            Astronomy.Body.VENUS to Color.rgb(247, 247, 220),
-            Astronomy.Body.EARTH to Color.rgb(160, 215, 240),
-            Astronomy.Body.MARS to Color.rgb(220, 56, 70),
+        // Unity's translucent planet hands; the Earth hand is the solid blue one.
+        val handColors = mapOf(
+            Astronomy.Body.MERCURY to Color.argb(77, 102, 128, 153),
+            Astronomy.Body.VENUS to Color.argb(77, 247, 247, 217),
+            Astronomy.Body.EARTH to Color.argb(235, 77, 77, 255),
+            Astronomy.Body.MARS to Color.argb(77, 230, 51, 77),
         )
-        // The instrument is intentionally intimate: only the Sun-facing inner planets and Earth.
-        for (body in listOf(Astronomy.Body.MERCURY, Astronomy.Body.VENUS, Astronomy.Body.EARTH)) {
+        for (body in listOf(Astronomy.Body.MARS, Astronomy.Body.VENUS, Astronomy.Body.MERCURY, Astronomy.Body.EARTH)) {
             val orbitR = radii.getValue(body)
-            val pathPaint = Paint(white).apply {
-                color = withAlpha(instrumentColor, if (body == Astronomy.Body.EARTH) 165 else 80)
-                strokeWidth = if (body == Astronomy.Body.EARTH) r * .0022f else r * .0015f
-                pathEffect = when (body) {
-                    Astronomy.Body.MERCURY -> DashPathEffect(floatArrayOf(r * .008f, r * .012f), 0f)
-                    Astronomy.Body.VENUS -> DashPathEffect(floatArrayOf(r * .05f, r * .018f), 0f)
-                    Astronomy.Body.EARTH -> null
-                    Astronomy.Body.MARS -> DashPathEffect(floatArrayOf(r * .12f, r * .025f), 0f)
-                }
-            }
-            canvas.drawCircle(cx, cy, orbitR, pathPaint)
             val angle = if (body == Astronomy.Body.EARTH) {
                 // The Unity Earth hand is the civil calendar hand: it must agree with the annual dial.
-                annualAngle(Astronomy.civilYearFraction(selectedInstant.atZone(zone)))
+                currentEarthAngle()
             } else {
-                val longitude = Astronomy.heliocentricPosition(body, selectedInstant).longitudeDegrees
-                if (north) 90.0 - longitude else longitude - 90.0
+                eclipticAngle(Astronomy.heliocentricPosition(body, selectedInstant).longitudeDegrees)
             }
+            val isEarth = body == Astronomy.Body.EARTH
+            drawOrbitTrail(
+                canvas, cx, cy, orbitR, angle,
+                sweepFraction = if (isEarth) .833f else .33f,
+                headWidth = if (isEarth) maxOf(1.4f * density, r * .0045f) else maxOf(1f * density, r * .003f),
+                alpha = if (isEarth) 235 else 128,
+            )
             val point = point(cx, cy, orbitR, angle)
-            if (body == Astronomy.Body.EARTH) {
-                // Unity's Earth line is the one planetary hand that reaches the annual dial.
-                drawDialTriangle(canvas, cx, cy, r * .99f, angle, r * .025f, 0x493F73FF)
-            }
-            val base = if (body == Astronomy.Body.EARTH) r * .01665f else r * .00665f
-            drawDialTriangle(canvas, cx, cy, orbitR, angle, base, withAlpha(colors.getValue(body),
-                if (body == Astronomy.Body.EARTH) 205 else 88))
+            val base = if (isEarth) r * .01665f else r * .00665f
+            drawDialTriangle(canvas, cx, cy, orbitR, angle, base, handColors.getValue(body))
             drawPlanetGlyph(canvas, body, point.first, point.second, r, cx, cy)
-            if (body == Astronomy.Body.EARTH) earthPoint = point
+            if (isEarth) earthPoint = point
+        }
+    }
+
+    /**
+     * Unity drew each orbit as a trail behind the planet (a third of the orbit, five sixths for
+     * Earth) that thins to nothing at its tail, rather than a full circle.
+     */
+    private fun drawOrbitTrail(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        headAngle: Double,
+        sweepFraction: Float,
+        headWidth: Float,
+        alpha: Int,
+    ) {
+        val segments = 72
+        // Planets advance counter-clockwise in the north view, so the trail lies clockwise of them.
+        val direction = if (north) 1f else -1f
+        val sweep = 360f * sweepFraction / segments
+        val bounds = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
+        val trail = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.BUTT
+        }
+        for (i in 0 until segments) {
+            val t = i / segments.toFloat()
+            trail.strokeWidth = (headWidth * (1f - t)).coerceAtLeast(.35f * density)
+            trail.color = withAlpha(instrumentColor, (alpha * (1f - .55f * t)).toInt())
+            canvas.drawArc(bounds, (headAngle + direction * i * sweep).toFloat(), direction * sweep * 1.04f, false, trail)
         }
     }
 
@@ -795,36 +864,42 @@ class SundialView(context: Context) : View(context) {
         }
     }
 
-    private fun drawGeocentric(canvas: Canvas) {
+    private fun drawGeocentric(canvas: Canvas, includeBackdrop: Boolean = true, includeSun: Boolean = true) {
         val (cx, cy, r) = geometry()
         val moonR = r * DialGeometry.MOON_DIAL
         val hourR = r * DialGeometry.HOUR_DIAL
         val timeZoneR = r * DialGeometry.TIME_ZONE_DIAL
         val sphereRadius = r * DialGeometry.EARTH_RADIUS
-        drawSprocket(canvas, cx, cy, hourR, 24, majorEvery = 1, inward = r * .042f)
-        drawSprocket(canvas, cx, cy, moonR, 30, majorEvery = 5, inward = r * .031f)
-        text.textSize = r * .038f
-        for (hour in 0 until 24) drawRotatedText(canvas, hour.toString(), cx, cy, hourR * .91f, -90.0 + hour * 15.0, text, true)
+        val sunY = cy - r * DialGeometry.GEOCENTRIC_SUN_DISTANCE
 
-        val local = selectedInstant.atZone(zone)
-        val phaseAngle = Astronomy.moonPhaseDegrees(selectedInstant)
-        val moonAngle = if (north) -90.0 + phaseAngle else -90.0 - phaseAngle
+        if (includeBackdrop) {
+            // Unity's Earth camera still saw the annual sprocket, season cross and Earth spike
+            // arcing around the Earth; keep them in the same place the camera flight leaves them.
+            canvas.save()
+            canvas.translate(cx, sunY)
+            canvas.rotate((90.0 - currentEarthAngle()).toFloat())
+            canvas.scale(DialGeometry.EARTH_CAMERA_ZOOM, DialGeometry.EARTH_CAMERA_ZOOM)
+            canvas.translate(-cx, -cy)
+            withTextScreenRotation(90.0 - currentEarthAngle()) { drawAnnualBackdrop(canvas, cx, cy, r) }
+            canvas.restore()
+        }
+
+        drawHourSprocket(canvas, cx, cy, hourR, r)
+        text.textSize = r * .038f
+        for (hour in 0 until 24) {
+            drawRotatedText(canvas, hour.toString(), cx, cy, hourR * .87f, hourAngle(hour.toDouble()), text, true)
+        }
+
+        val moonAngle = DialGeometry.moonAngle(Astronomy.moonPhaseDegrees(selectedInstant), north)
         moonPoint = point(cx, cy, moonR, moonAngle)
         drawAnnularPointer(canvas, cx, cy, sphereRadius * 1.055f, moonR * .97f, moonAngle,
             moonR * .05f, withAlpha(instrumentColor, 122))
         drawAnnularPointer(canvas, cx, cy, sphereRadius * 1.065f, moonR * .82f, moonAngle,
             moonR * .021f, 0x9B85858A.toInt())
-        text.textSize = r * .037f
-        for (i in 0 until 29) {
-            val date = local.toLocalDate().plusDays(i.toLong())
-            drawRotatedText(canvas, date.dayOfMonth.toString(), cx, cy, moonR * .94f,
-                moonAngle + (if (north) 1 else -1) * i * 360.0 / Astronomy.SYNODIC_MONTH_DAYS, text, true)
-        }
+        drawLunarDial(canvas, cx, cy, moonR, r)
 
         // Sun stays at the top in Earth-following view, as in the original camera behavior.
-        drawSunBloom(canvas, cx, cy - r * 1.075f, r * .058f)
-        drawAnnularPointer(canvas, cx, cy, sphereRadius * 1.055f, r * 1.075f, -90.0,
-            r * .035f, withAlpha(instrumentColor, 100))
+        if (includeSun) drawSunBloom(canvas, cx, sunY, r * .058f)
 
         drawCalendarDayEvents(canvas, cx, cy, hourR)
         drawTimeZoneDial(canvas, cx, cy, r, sphereRadius, timeZoneR)
@@ -835,11 +910,115 @@ class SundialView(context: Context) : View(context) {
         }
         canvas.drawOval(RectF(cx - sphereRadius * 1.08f, cy - sphereRadius * .92f,
             cx + sphereRadius * 1.16f, cy + sphereRadius * 1.2f), shadow)
-        drawEarthSeal(canvas, cx, cy, sphereRadius, cx, cy - r * 1.075f, ornate = true)
+        drawEarthSeal(canvas, cx, cy, sphereRadius, cx, sunY, ornate = true,
+            highlightOffsetMinutes = selectedTimeZoneOffset())
 
-        drawMoonGlyph(canvas, moonPoint.first, moonPoint.second, r * .041f, cx, cy - r * 1.075f)
-        text.textSize = r * .045f
-        canvas.drawText(local.month.name.take(3), cx, cy + moonR + r * .065f, text)
+        drawMoonGlyph(canvas, moonPoint.first, moonPoint.second, r * .041f, cx, sunY)
+    }
+
+    /** Unity's Earth sprocket: 24 hour teeth with three quarter-hour teeth between them. */
+    private fun drawHourSprocket(canvas: Canvas, cx: Float, cy: Float, radius: Float, r: Float) {
+        white.color = instrumentColor
+        white.strokeWidth = maxOf(density, r * .005f)
+        canvas.drawCircle(cx, cy, radius, white)
+        val tooth = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = instrumentColor; style = Paint.Style.FILL }
+        for (quarter in 0 until 96) {
+            val major = quarter % 4 == 0
+            drawSprocketTooth(
+                canvas, cx, cy, radius, radius - if (major) r * .058f else r * .025f,
+                hourAngle(quarter / 4.0),
+                baseHalfWidth = if (major) r * .0048f else r * .0032f,
+                tipHalfWidth = if (major) r * .0016f else r * .0011f,
+                paint = tooth,
+            )
+        }
+    }
+
+    /**
+     * Unity's lunar dial: one tick at each coming local midnight, placed where the Moon will be then,
+     * with the date between ticks. The 29-day window leaves a gap just behind the Moon, and the
+     * first of a month gets a split tick labelled with both months.
+     */
+    private fun drawLunarDial(canvas: Canvas, cx: Float, cy: Float, moonR: Float, r: Float) {
+        val today = selectedInstant.atZone(zone).toLocalDate()
+        val midnights = (0..29).map { today.plusDays(it.toLong()).atStartOfDay(zone).toInstant() }
+        val phases = midnights.map { Astronomy.moonPhaseDegrees(it) }
+        val angles = phases.map { DialGeometry.moonAngle(it, north) }
+        val direction = if (north) -1.0 else 1.0
+
+        var span = 0.0
+        for (i in 0 until phases.lastIndex) {
+            span += Astronomy.normalizeDegrees(phases[i + 1] - phases[i])
+        }
+        white.color = instrumentColor
+        white.strokeWidth = maxOf(density, r * .004f)
+        canvas.drawArc(RectF(cx - moonR, cy - moonR, cx + moonR, cy + moonR),
+            angles.first().toFloat(), (direction * span).toFloat(), false, white)
+
+        val monthPaint = Paint(text).apply { textSize = r * .033f }
+        text.textSize = r * .037f
+        for (i in 0..29) {
+            val date = today.plusDays(i.toLong())
+            val monthStart = date.dayOfMonth == 1 && i > 0
+            white.strokeWidth = if (monthStart) maxOf(density, r * .0045f) else maxOf(.8f * density, r * .0026f)
+            drawRadialLine(canvas, cx, cy,
+                moonR - if (monthStart) r * .05f else r * .024f,
+                moonR + if (monthStart) r * .035f else 0f,
+                angles[i], white)
+            if (monthStart) {
+                // Earlier dates lie clockwise (north); the new month continues counter-clockwise.
+                drawRotatedText(canvas, date.month.name.take(3), cx, cy, moonR + r * .038f,
+                    angles[i] + direction * 3.6, monthPaint, true)
+                drawRotatedText(canvas, date.minusDays(1).month.name.take(3), cx, cy, moonR + r * .038f,
+                    angles[i] - direction * 3.6, monthPaint, true)
+            }
+            if (i < 29) {
+                val middle = angles[i] + direction * Astronomy.normalizeDegrees(phases[i + 1] - phases[i]) / 2.0
+                drawRotatedText(canvas, date.dayOfMonth.toString(), cx, cy, moonR * .94f, middle, text, true)
+            }
+        }
+        // Current month sits just outside the ring where today's window begins.
+        drawRotatedText(canvas, today.month.name.take(3), cx, cy, moonR + r * .038f,
+            angles.first() - direction * 3.6, monthPaint, true)
+    }
+
+    private fun drawSprocketTooth(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        baseRadius: Float,
+        tipRadius: Float,
+        angleDegrees: Double,
+        baseHalfWidth: Float,
+        tipHalfWidth: Float,
+        paint: Paint,
+    ) {
+        val base = point(cx, cy, baseRadius, angleDegrees)
+        val tip = point(cx, cy, tipRadius, angleDegrees)
+        val perpendicular = Math.toRadians(angleDegrees + 90.0)
+        val px = cos(perpendicular).toFloat()
+        val py = sin(perpendicular).toFloat()
+        canvas.drawPath(Path().apply {
+            moveTo(base.first - px * baseHalfWidth, base.second - py * baseHalfWidth)
+            lineTo(tip.first - px * tipHalfWidth, tip.second - py * tipHalfWidth)
+            lineTo(tip.first + px * tipHalfWidth, tip.second + py * tipHalfWidth)
+            lineTo(base.first + px * baseHalfWidth, base.second + py * baseHalfWidth)
+            close()
+        }, paint)
+    }
+
+    private inline fun withTextScreenRotation(rotation: Double, block: () -> Unit) {
+        val previous = textScreenRotation
+        textScreenRotation = previous + rotation
+        try { block() } finally { textScreenRotation = previous }
+    }
+
+    private fun hourAngle(hours: Double): Double = DialGeometry.hourAngle(hours, north)
+
+    private fun selectedTimeZoneOffset(): Int {
+        val currentLocalOffset = TimeZoneDial.localOffsetMinutes(selectedInstant, zone)
+        if (selectedTimeZoneOffsetMinutes == null) selectedTimeZoneOffsetMinutes = currentLocalOffset
+        return if (selectedTimeZoneIsLocal) currentLocalOffset else selectedTimeZoneOffsetMinutes!!
     }
 
     private fun drawTimeZoneDial(
@@ -850,7 +1029,7 @@ class SundialView(context: Context) : View(context) {
         sphereRadius: Float,
         timeZoneR: Float,
     ) {
-        val spokes = TimeZoneDial.spokes(selectedInstant)
+        val spokes = TimeZoneDial.spokes(selectedInstant, north)
         val dates = spokes.map { it.localDate }.distinct().sorted()
         val chordRadius = timeZoneR - r * .024f
         val chordPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -881,10 +1060,8 @@ class SundialView(context: Context) : View(context) {
         white.strokeWidth = maxOf(.8f * density, r * .0018f)
         canvas.drawCircle(cx, cy, timeZoneR, white)
 
-        val currentLocalOffset = TimeZoneDial.localOffsetMinutes(selectedInstant, zone)
-        if (selectedTimeZoneOffsetMinutes == null) selectedTimeZoneOffsetMinutes = currentLocalOffset
-        val selectedOffset = if (selectedTimeZoneIsLocal) currentLocalOffset else selectedTimeZoneOffsetMinutes!!
-        val selectedAngle = TimeZoneDial.angleForOffsetMinutes(selectedInstant, selectedOffset)
+        val selectedOffset = selectedTimeZoneOffset()
+        val selectedAngle = TimeZoneDial.angleForOffsetMinutes(selectedInstant, selectedOffset, north)
 
         spokes.forEach { spoke ->
             val isSelected = kotlin.math.abs(Astronomy.normalizeSignedDegrees(spoke.angleDegrees - selectedAngle)) < 4.0
@@ -925,6 +1102,7 @@ class SundialView(context: Context) : View(context) {
         val axisEnd = galacticAxisPoint(cx, cy, frame, r * 1.13f)
         canvas.drawLine(axisStart.first, axisStart.second, axisEnd.first, axisEnd.second, axis)
         drawDirectionArrow(canvas, axisStart, frame, r, axis)
+        drawGalacticYearTicks(canvas, cx, cy, r, frame)
 
         sunPoint = galacticSunPoint(cx, cy, r, selectedInstant)
         drawOrthonormalPlane(canvas, sunPoint.first, sunPoint.second, frame, r)
@@ -933,16 +1111,18 @@ class SundialView(context: Context) : View(context) {
             Astronomy.Body.MERCURY to 0xFF9BB6C7.toInt(),
             Astronomy.Body.VENUS to 0xFFFFD591.toInt(),
             Astronomy.Body.EARTH to 0xFF6ED6F3.toInt(),
+            Astronomy.Body.MARS to 0xFFE7523E.toInt(),
         )
         val orbitRadii = mapOf(
             Astronomy.Body.MERCURY to r * .105f,
             Astronomy.Body.VENUS to r * .185f,
             Astronomy.Body.EARTH to r * .285f,
+            Astronomy.Body.MARS to r * .434f,
         )
         val start = LocalDate.of(galacticAnchorYear - 1, 1, 1).atStartOfDay(zone).toInstant()
         val end = LocalDate.of(galacticAnchorYear + 2, 1, 1).atStartOfDay(zone).toInstant()
         val durationSeconds = Duration.between(start, end).seconds
-        for (body in listOf(Astronomy.Body.MERCURY, Astronomy.Body.VENUS, Astronomy.Body.EARTH)) {
+        for (body in Astronomy.Body.entries) {
             val spiral = Path()
             for (step in 0..240) {
                 val instant = start.plusSeconds(durationSeconds * step / 240L)
@@ -957,7 +1137,7 @@ class SundialView(context: Context) : View(context) {
         axis.pathEffect = null
 
         drawGalacticEvents(canvas, cx, cy, r, frame, orbitRadii.getValue(Astronomy.Body.EARTH))
-        listOf(Astronomy.Body.MERCURY, Astronomy.Body.VENUS, Astronomy.Body.EARTH).forEach { body ->
+        Astronomy.Body.entries.forEach { body ->
             val point = galacticPlanetPoint(cx, cy, r, frame, body, orbitRadii.getValue(body), selectedInstant)
             drawPlanetGlyph(canvas, body, point.first, point.second, r * .82f, sunPoint.first, sunPoint.second)
         }
@@ -968,6 +1148,38 @@ class SundialView(context: Context) : View(context) {
         val yearLabel = Paint(text).apply { textSize = r * .055f }
         canvas.drawText(selectedInstant.atZone(zone).format(DateTimeFormatter.ofPattern("MMM d  yyyy")),
             cx, cy + r * 1.13f, yearLabel)
+    }
+
+    /** Unity's galactic sun line: a big tick and year label at each New Year, lighter month ticks. */
+    private fun drawGalacticYearTicks(canvas: Canvas, cx: Float, cy: Float, r: Float, frame: GalacticFrame) {
+        val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+        }
+        val yearLabel = Paint(text).apply {
+            textSize = r * .05f
+            color = withAlpha(instrumentColor, 190)
+            textAlign = if (frame.sideX < 0) Paint.Align.RIGHT else Paint.Align.LEFT
+        }
+        val limit = r * 1.13f
+        for (year in galacticAnchorYear - 2..galacticAnchorYear + 2) {
+            for (month in 0 until 12) {
+                val offset = year - galacticAnchorYear + month / 12.0 - .5
+                val distance = (offset * frame.yearPitch).toFloat()
+                if (kotlin.math.abs(distance) > limit) continue
+                val center = galacticAxisPoint(cx, cy, frame, distance)
+                val half = if (month == 0) r * .045f else r * .014f
+                tick.color = withAlpha(instrumentColor, if (month == 0) 200 else 120)
+                tick.strokeWidth = if (month == 0) r * .0045f else r * .0025f
+                canvas.drawLine(center.first - frame.sideX * half, center.second - frame.sideY * half,
+                    center.first + frame.sideX * half, center.second + frame.sideY * half, tick)
+                if (month == 0) {
+                    val label = Pair(center.first + frame.sideX * r * .065f, center.second + frame.sideY * r * .065f)
+                    canvas.drawText(year.toString(), label.first,
+                        label.second - (yearLabel.ascent() + yearLabel.descent()) / 2f, yearLabel)
+                }
+            }
+        }
     }
 
     private data class GalacticFrame(
@@ -1121,7 +1333,8 @@ class SundialView(context: Context) : View(context) {
             }
             canvas.drawArc(RectF(cx - band.centerRadius, cy - band.centerRadius,
                 cx + band.centerRadius, cy + band.centerRadius),
-                annualAngle(segment.startFraction).toFloat(), (-360.0 * segment.sweepFraction).toFloat(), false, p)
+                annualAngle(segment.startFraction).toFloat(),
+                ((if (north) -360.0 else 360.0) * segment.sweepFraction).toFloat(), false, p)
             val labelPaint = Paint(text).apply { color = withAlpha(event.color, 220); textSize = r * .027f }
             val allowed = (segment.sweepFraction * 80).toInt().coerceAtLeast(1)
             drawRotatedText(canvas, event.title.take(allowed), cx, cy, band.centerRadius,
@@ -1139,12 +1352,14 @@ class SundialView(context: Context) : View(context) {
             }
             canvas.drawArc(RectF(cx - band.centerRadius, cy - band.centerRadius,
                 cx + band.centerRadius, cy + band.centerRadius),
-                (-90.0 + segment.startMinute / 4.0).toFloat(), ((segment.endMinuteExclusive - segment.startMinute).coerceAtLeast(1.0) / 4.0).toFloat(), false, p)
+                hourAngle(segment.startMinute / 60.0).toFloat(),
+                ((if (north) -1.0 else 1.0) *
+                    (segment.endMinuteExclusive - segment.startMinute).coerceAtLeast(1.0) / 4.0).toFloat(), false, p)
             val middleMinute = (segment.startMinute + segment.endMinuteExclusive) / 2.0
             val allowed = ((segment.endMinuteExclusive - segment.startMinute) / 15.0).toInt().coerceAtLeast(1)
             val labelPaint = Paint(text).apply { color = withAlpha(event.color, 230); textSize = r * .04f }
             drawRotatedText(canvas, event.title.take(allowed), cx, cy, band.centerRadius,
-                -90.0 + middleMinute / 4.0, labelPaint, true)
+                hourAngle(middleMinute / 60.0), labelPaint, true)
         }
     }
 
@@ -1162,8 +1377,11 @@ class SundialView(context: Context) : View(context) {
         sunX: Float,
         sunY: Float,
         ornate: Boolean,
+        highlightOffsetMinutes: Int? = null,
     ) {
-        val bitmap = earthRenderer.render((radius * 2.35f).toInt().coerceAtLeast(64), selectedInstant, north)
+        val bitmap = earthRenderer.render(
+            (radius * 2.35f).toInt().coerceAtLeast(64), selectedInstant, north, highlightOffsetMinutes,
+        )
         val sunAngle = Math.toDegrees(atan2((sunY - y).toDouble(), (sunX - x).toDouble())).toFloat()
         // EarthSphereRenderer uses Sun-up coordinates; rotate the complete globe into the actual
         // Earth-to-Sun direction without changing its geographic orientation.
@@ -1171,7 +1389,7 @@ class SundialView(context: Context) : View(context) {
         canvas.rotate(sunAngle + 90f, x, y)
         canvas.drawBitmap(bitmap, null, RectF(x - radius, y - radius, x + radius, y + radius), earthBitmapPaint)
         if (ornate) {
-            val pole = EarthOrientation.projectedGeographicPole(north)
+            val pole = EarthOrientation.projectedGeographicPole(north, Zodiac.sunLongitude(selectedInstant))
             val axis = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = 0x9ED9B86B.toInt()
                 strokeWidth = maxOf(density, radius * .009f)
@@ -1381,8 +1599,10 @@ class SundialView(context: Context) : View(context) {
         val cardWidth = minOf(width - 32f * density, 430f * density)
         val left = (width - cardWidth) / 2f
         val right = left + cardWidth
-        val dialTop = cy - r * 1.08f
-        val dialBottom = cy + r * 1.08f
+        // The Earth view keeps the Sun above the lunar dial and the annual dial arcing below it.
+        val geocentric = state == ViewState.GEOCENTRIC
+        val dialTop = cy - r * if (geocentric) 1.14f else 1.08f
+        val dialBottom = cy + r * if (geocentric) 1.16f else 1.08f
         val topBounds = RectF(left, 66f * density, right, dialTop - 10f * density)
         val bottomLimit = height - (if (forWallpaper || realtime) 16f else 76f) * density
         val bottomBounds = RectF(left, dialBottom + 10f * density, right, bottomLimit)
@@ -1578,7 +1798,7 @@ class SundialView(context: Context) : View(context) {
                     .toList()
             }
             ViewState.GEOCENTRIC -> {
-                val minute = Astronomy.normalizeDegrees(angle + 90.0) * 4.0
+                val minute = DialGeometry.minuteFromHourAngle(angle, north)
                 val hourR = r * DialGeometry.HOUR_DIAL
                 occurrences.asSequence()
                     .filter { !it.isYearRingEvent }
@@ -1693,7 +1913,7 @@ class SundialView(context: Context) : View(context) {
                 }
                 if (state == ViewState.GEOCENTRIC && radiusFromCenter in r * .53f..r * .75f) {
                     val touchAngle = Math.toDegrees(atan2((event.y - cy).toDouble(), (event.x - cx).toDouble()))
-                    val selected = TimeZoneDial.nearestSpoke(TimeZoneDial.spokes(selectedInstant), touchAngle)
+                    val selected = TimeZoneDial.nearestSpoke(TimeZoneDial.spokes(selectedInstant, north), touchAngle)
                     selectedTimeZoneOffsetMinutes = selected.offsetHours * 60
                     selectedTimeZoneIsLocal = false
                     invalidate()
@@ -1750,16 +1970,21 @@ class SundialView(context: Context) : View(context) {
         val (cx, cy, _) = geometry()
         val canvasAngle = Math.toDegrees(atan2((y - cy).toDouble(), (x - cx).toDouble()))
         val fraction = DialGeometry.yearFractionFromAngle(canvasAngle, north)
-        selectedInstant = Astronomy.instantAtYearFraction(displayedYear, fraction, zone)
+        // Like Unity's angle search from the last date, keep scrubbing continuous across New Year
+        // instead of wrapping back to the start of the displayed year.
+        val current = selectedInstant
+        selectedInstant = (displayedYear - 1..displayedYear + 1)
+            .map { Astronomy.instantAtYearFraction(it, fraction, zone) }
+            .minBy { kotlin.math.abs(Duration.between(current, it).seconds) }
         invalidate()
     }
 
     private fun updateMoonDrag(x: Float, y: Float) {
         val (cx, cy, _) = geometry()
-        val rawAngle = Math.toDegrees(atan2((y - cy).toDouble(), (x - cx).toDouble())) + 90.0
-        val angle = Astronomy.normalizeDegrees(if (north) rawAngle else -rawAngle)
+        val touchAngle = Math.toDegrees(atan2((y - cy).toDouble(), (x - cx).toDouble()))
+        val targetPhase = DialGeometry.phaseFromMoonAngle(touchAngle, north)
         val currentPhase = Astronomy.moonPhaseDegrees(selectedInstant)
-        val difference = Astronomy.normalizeSignedDegrees(angle - currentPhase)
+        val difference = Astronomy.normalizeSignedDegrees(targetPhase - currentPhase)
         selectedInstant = selectedInstant.plusSeconds((difference / 360.0 * Astronomy.SYNODIC_MONTH_DAYS * 86_400).toLong())
         invalidate()
     }
@@ -1794,15 +2019,6 @@ class SundialView(context: Context) : View(context) {
         realtime = true
         onCalendarSelectionChanged?.invoke(selectedCalendarIds.toSet())
         invalidate()
-    }
-
-    private fun drawSprocket(canvas: Canvas, cx: Float, cy: Float, radius: Float, count: Int, majorEvery: Int, inward: Float) {
-        white.color = instrumentColor; white.strokeWidth = maxOf(density, radius * .004f)
-        canvas.drawCircle(cx, cy, radius, white)
-        for (i in 0 until count) {
-            val length = if (i % majorEvery == 0) inward else inward * .55f
-            drawRadialLine(canvas, cx, cy, radius - length, radius, -90.0 + i * 360.0 / count, white)
-        }
     }
 
     private fun drawRadialLine(canvas: Canvas, cx: Float, cy: Float, inner: Float, outer: Float, angleDegrees: Double, paint: Paint) {
@@ -1863,7 +2079,9 @@ class SundialView(context: Context) : View(context) {
         val p = point(cx, cy, radius, angleDegrees)
         canvas.save()
         canvas.rotate((angleDegrees + 90.0).toFloat(), p.first, p.second)
-        if (upright && angleDegrees > 0 && angleDegrees < 180) canvas.rotate(180f, p.first, p.second)
+        // Flip by where the label ends up on screen, including any camera rotation around it.
+        val screenAngle = Astronomy.normalizeDegrees(angleDegrees + textScreenRotation)
+        if (upright && screenAngle > 0 && screenAngle < 180) canvas.rotate(180f, p.first, p.second)
         canvas.drawText(value, p.first, p.second - (paint.ascent() + paint.descent()) / 2f, paint)
         canvas.restore()
     }
@@ -1881,8 +2099,7 @@ class SundialView(context: Context) : View(context) {
         lerp(Color.blue(start).toFloat(), Color.blue(end).toFloat(), progress).toInt(),
     )
 
-    private fun zodiacAngle(longitudeDegrees: Double): Double =
-        if (north) 90.0 - longitudeDegrees else longitudeDegrees - 90.0
+    private fun zodiacAngle(longitudeDegrees: Double): Double = eclipticAngle(longitudeDegrees)
 
     private fun annualAngle(fraction: Double): Double = DialGeometry.annualAngle(fraction, north)
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float = kotlin.math.hypot(x1 - x2, y1 - y2)

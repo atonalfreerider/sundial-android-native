@@ -14,11 +14,17 @@ object TimeZoneDial {
         val label: String,
     )
 
-    fun spokes(instant: Instant): List<Spoke> = (-12..11).map { offset ->
+    /**
+     * Spokes sit on Unity's solar 24-hour ring: each zone points at its local time, so the zone
+     * at noon faces the Sun (screen top) and midnight faces away.
+     */
+    fun spokes(instant: Instant, north: Boolean = true): List<Spoke> = (-12..11).map { offset ->
         val local = instant.atOffset(ZoneOffset.ofHours(offset))
         Spoke(
             offsetHours = offset,
-            angleDegrees = -90.0 + (local.hour * 60.0 + local.minute + local.second / 60.0) / 4.0,
+            angleDegrees = DialGeometry.hourAngle(
+                (local.hour * 60.0 + local.minute + local.second / 60.0) / 60.0, north,
+            ),
             localDate = local.toLocalDate(),
             label = commonName(offset),
         )
@@ -27,10 +33,10 @@ object TimeZoneDial {
     fun localOffsetMinutes(instant: Instant, zoneId: ZoneId): Int =
         zoneId.rules.getOffset(instant).totalSeconds / 60
 
-    fun angleForOffsetMinutes(instant: Instant, offsetMinutes: Int): Double {
+    fun angleForOffsetMinutes(instant: Instant, offsetMinutes: Int, north: Boolean = true): Double {
         val local = instant.atOffset(ZoneOffset.ofTotalSeconds(offsetMinutes * 60))
         val localMinutes = local.hour * 60.0 + local.minute + local.second / 60.0 + local.nano / 60_000_000_000.0
-        return -90.0 + localMinutes / 4.0
+        return DialGeometry.hourAngle(localMinutes / 60.0, north)
     }
 
     fun localName(zoneId: ZoneId, instant: Instant): String {
