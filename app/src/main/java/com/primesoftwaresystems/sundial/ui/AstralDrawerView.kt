@@ -29,7 +29,7 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     private val hemisphereSwitch = controlSwitch("SOUTHERN HEMISPHERE")
     private val wallpaperSwitch = controlSwitch("15-MIN CELESTIAL WALLPAPER")
     private val lockWallpaperSwitch = controlSwitch("APPLY TO LOCK SCREEN")
-    private val zodiacSwitch = controlSwitch("ZODIAC INSTRUMENT")
+    private val zodiacSwitch = controlSwitch("ASTROLOGY MODE")
     private val zodiacDetailContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val backgroundContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val calendarContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }

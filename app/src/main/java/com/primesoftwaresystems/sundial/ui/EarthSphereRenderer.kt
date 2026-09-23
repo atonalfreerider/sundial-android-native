@@ -2,11 +2,14 @@ package com.primesoftwaresystems.sundial.ui
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import com.primesoftwaresystems.sundial.astronomy.Astronomy
 import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.asin
 import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -35,7 +38,8 @@ class EarthSphereRenderer(private val source: Bitmap) {
         val pixels = IntArray(safeSize * safeSize)
         val texturePixels = IntArray(source.width * source.height)
         source.getPixels(texturePixels, 0, source.width, 0, 0, source.width, source.height)
-        val frame = EarthOrientation.frame(instant, north)
+        val rotation = Math.toRadians(Astronomy.greenwichMeanSiderealDegrees(instant))
+        val tilt = Math.toRadians(EarthOrientation.OBLIQUITY_DEGREES)
         val center = (safeSize - 1) / 2.0
         val radius = safeSize * 0.485
 
@@ -47,12 +51,17 @@ class EarthSphereRenderer(private val source: Bitmap) {
                 if (rr > 1.0) continue
                 val sz = sqrt(1.0 - rr)
 
-                val surface = frame.right * sx + frame.sunward * sy + frame.viewer * sz
-                val latitude = asin(surface.dot(frame.northPole).coerceIn(-1.0, 1.0))
-                val longitude = atan2(
-                    surface.dot(frame.eastAtPrimeMeridian),
-                    surface.dot(frame.primeMeridian),
-                )
+                // Keep the off-axis pole fixed in the solar-north camera, then rotate the actual
+                // surface around that pole. Moving the pole with the season makes a 2:1 map's polar
+                // singularity sweep sideways and visibly twists the continents.
+                val sign = if (north) 1.0 else -1.0
+                val worldX = sx
+                val worldY = sy * sign * sin(tilt) + sz * sign * cos(tilt)
+                val worldZ = sy * -cos(tilt) + sz * sin(tilt)
+                val rotatedX = worldX * cos(rotation) - worldZ * sin(rotation)
+                val rotatedZ = worldX * sin(rotation) + worldZ * cos(rotation)
+                val longitude = atan2(rotatedX, rotatedZ)
+                val latitude = asin(worldY.coerceIn(-1.0, 1.0))
                 val u = ((longitude / (2.0 * PI) + 0.5) * source.width).toInt().floorMod(source.width)
                 val v = ((0.5 - latitude / PI) * (source.height - 1)).toInt().coerceIn(0, source.height - 1)
                 val sample = texturePixels[v * source.width + u]

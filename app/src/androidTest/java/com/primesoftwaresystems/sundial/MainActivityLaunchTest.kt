@@ -12,8 +12,10 @@ import com.primesoftwaresystems.sundial.ui.SundialView
 import com.primesoftwaresystems.sundial.ui.CelestialStyle
 import com.primesoftwaresystems.sundial.ui.CelestialStylePreferences
 import com.primesoftwaresystems.sundial.wallpaper.DailyWallpaperScheduler
+import com.primesoftwaresystems.sundial.ui.ZodiacProfile
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -120,6 +122,29 @@ class MainActivityLaunchTest {
             } finally {
                 resetFrame.recycle()
             }
+        }
+    }
+
+    @Test fun horoscopePrintsOnHomeAndLockWallpapersOnlyInAstrologyMode() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val instant = Instant.parse("2026-09-22T19:30:00Z")
+            fun renderedTopPixel(enabled: Boolean, state: SundialView.ViewState): Int {
+                val view = SundialView(context)
+                view.setAstrologyContentForTest(
+                    ZodiacProfile(enabled = enabled),
+                    "A deliberate test horoscope carried across the celestial wallpaper.",
+                )
+                val bitmap = view.renderWallpaperBitmap(1_080, 2_424, instant, state)
+                return try { bitmap.getPixel(540, 300) } finally { bitmap.recycle() }
+            }
+
+            val astronomy = renderedTopPixel(false, SundialView.ViewState.HELIOCENTRIC)
+            val astrologyHome = renderedTopPixel(true, SundialView.ViewState.HELIOCENTRIC)
+            val astrologyLock = renderedTopPixel(true, SundialView.ViewState.GEOCENTRIC)
+
+            assertNotEquals("Astronomy wallpaper must not print astrology content", astronomy, astrologyHome)
+            assertNotEquals("Lock wallpaper must print the horoscope panel", astronomy, astrologyLock)
         }
     }
 }

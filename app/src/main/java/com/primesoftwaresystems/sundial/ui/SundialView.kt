@@ -168,6 +168,10 @@ class SundialView(context: Context) : View(context) {
         invalidate()
     }
     fun setHoroscope(value: String?) { horoscopeText = value?.trim()?.takeIf { it.isNotBlank() }; invalidate() }
+    internal fun setAstrologyContentForTest(profile: ZodiacProfile, horoscope: String?) {
+        zodiacProfile = profile
+        horoscopeText = horoscope
+    }
     fun setSouthernHemisphere(value: Boolean) { north = !value; invalidate() }
     fun setSelectedCalendarIds(ids: Set<Long>) {
         selectedCalendarIds.clear(); selectedCalendarIds.addAll(ids); invalidate()
@@ -199,7 +203,9 @@ class SundialView(context: Context) : View(context) {
         } else {
             drawState(canvas, state)
         }
-        if (!wallpaperMode) {
+        if (wallpaperMode) {
+            if (zodiacProfile.enabled) horoscopeText?.let { drawHoroscopeCard(canvas, it, forWallpaper = true) }
+        } else {
             drawChrome(canvas)
             inspectedEvent?.let { drawEventInspectionOverlay(canvas, it) }
         }
@@ -1165,7 +1171,7 @@ class SundialView(context: Context) : View(context) {
         canvas.rotate(sunAngle + 90f, x, y)
         canvas.drawBitmap(bitmap, null, RectF(x - radius, y - radius, x + radius, y + radius), earthBitmapPaint)
         if (ornate) {
-            val pole = EarthOrientation.projectedNorthPole(selectedInstant, north)
+            val pole = EarthOrientation.projectedGeographicPole(north)
             val axis = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = 0x9ED9B86B.toInt()
                 strokeWidth = maxOf(density, radius * .009f)
@@ -1343,7 +1349,7 @@ class SundialView(context: Context) : View(context) {
             text.textSize = 15f * density
             canvas.drawText("RESET CURRENT TIME", width / 2f, height - 29f * density, text)
         }
-        if (zodiacProfile.enabled) horoscopeText?.let { drawHoroscopeCard(canvas, it) }
+        if (zodiacProfile.enabled) horoscopeText?.let { drawHoroscopeCard(canvas, it, forWallpaper = false) }
     }
 
     private fun drawNatalSignMedallion(canvas: Canvas) {
@@ -1370,7 +1376,7 @@ class SundialView(context: Context) : View(context) {
         canvas.drawText(sign.symbol, x, y - (glyph.ascent() + glyph.descent()) / 2f, glyph)
     }
 
-    private fun drawHoroscopeCard(canvas: Canvas, value: String) {
+    private fun drawHoroscopeCard(canvas: Canvas, value: String, forWallpaper: Boolean) {
         val (_, cy, r) = geometry()
         val cardWidth = minOf(width - 32f * density, 430f * density)
         val left = (width - cardWidth) / 2f
@@ -1378,7 +1384,7 @@ class SundialView(context: Context) : View(context) {
         val dialTop = cy - r * 1.08f
         val dialBottom = cy + r * 1.08f
         val topBounds = RectF(left, 66f * density, right, dialTop - 10f * density)
-        val bottomLimit = height - (if (realtime) 16f else 76f) * density
+        val bottomLimit = height - (if (forWallpaper || realtime) 16f else 76f) * density
         val bottomBounds = RectF(left, dialBottom + 10f * density, right, bottomLimit)
         val minimumPanelHeight = 92f * density
         val sign = zodiacProfile.resolvedSign()
@@ -1391,7 +1397,12 @@ class SundialView(context: Context) : View(context) {
                 "${sign.symbol}  ${sign.displayName.uppercase()} · TODAY'S ORACLE",
                 first,
             )
-            drawHoroscopePanel(canvas, bottomBounds, "CONTINUED · PRIVATE ON-DEVICE", second)
+            drawHoroscopePanel(
+                canvas,
+                bottomBounds,
+                if (forWallpaper) "CONTINUED · CELESTIAL WALLPAPER" else "CONTINUED · PRIVATE ON-DEVICE",
+                second,
+            )
             return
         }
 

@@ -327,6 +327,7 @@ class MainActivity : Activity() {
                 ZodiacPreferences.setHoroscope(this@MainActivity, requestedProfile, today, horoscope)
                 sundialView.setHoroscope(horoscope)
                 drawerView.setHoroscopeStatus("Written privately by Gemini Nano · displayed on the instrument")
+                refreshWallpapers()
                 drawerLayout.closeDrawer(GravityCompat.START)
             }.onFailure { error ->
                 val message = error.message ?: "On-device horoscope generation failed"
