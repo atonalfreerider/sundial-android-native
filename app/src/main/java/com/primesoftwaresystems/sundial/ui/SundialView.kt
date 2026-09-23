@@ -11,11 +11,16 @@ import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.os.SystemClock
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.view.MotionEvent
 import android.view.View
 import com.primesoftwaresystems.sundial.R
 import com.primesoftwaresystems.sundial.astronomy.Astronomy
+import com.primesoftwaresystems.sundial.astronomy.Zodiac
 import com.primesoftwaresystems.sundial.calendar.CalendarOccurrence
 import com.primesoftwaresystems.sundial.calendar.CalendarIntervals
 import java.time.Instant
@@ -53,6 +58,8 @@ class SundialView(context: Context) : View(context) {
     private var running = true
     private var wallpaperMode = false
     private var backgroundStyle = CelestialStylePreferences.get(context)
+    private var zodiacProfile = ZodiacPreferences.get(context)
+    private var horoscopeText = ZodiacPreferences.getCurrentHoroscope(context, zodiacProfile, LocalDate.now())
     private var selectedInstant: Instant = Instant.now()
     private var dragMode = DragMode.NONE
     private val selectedCalendarIds = linkedSetOf<Long>()
@@ -102,6 +109,13 @@ class SundialView(context: Context) : View(context) {
         CelestialStylePreferences.set(context, value)
         invalidate()
     }
+    fun setZodiacProfile(value: ZodiacProfile) {
+        zodiacProfile = value
+        ZodiacPreferences.set(context, value)
+        horoscopeText = ZodiacPreferences.getCurrentHoroscope(context, value, LocalDate.now())
+        invalidate()
+    }
+    fun setHoroscope(value: String?) { horoscopeText = value?.trim()?.takeIf { it.isNotBlank() }; invalidate() }
     fun setSouthernHemisphere(value: Boolean) { north = !value; invalidate() }
     fun setSelectedCalendarIds(ids: Set<Long>) {
         selectedCalendarIds.clear(); selectedCalendarIds.addAll(ids); invalidate()
@@ -287,13 +301,222 @@ class SundialView(context: Context) : View(context) {
 
     private fun drawHeliocentric(canvas: Canvas) {
         val (cx, cy, r) = geometry()
+        drawSeasonShading(canvas, cx, cy, r)
+        drawReverseSeasonRing(canvas, cx, cy, r)
         drawAnnualDial(canvas, cx, cy, r)
+        if (zodiacProfile.enabled) drawZodiacRing(canvas, cx, cy, r)
         drawSeasonCross(canvas, cx, cy, r)
+        if (zodiacProfile.enabled) drawPlanetZodiacHands(canvas, cx, cy, r)
         drawOrbitPaths(canvas, cx, cy, r)
         drawCalendarYearEvents(canvas, cx, cy, r)
         drawSunBloom(canvas, cx, cy, r * 0.052f)
-        text.textSize = r * 0.115f
-        canvas.drawText("S U N : D I A L", cx, cy - r * 0.62f, text)
+        text.textSize = r * 0.086f
+        canvas.drawText("S U N : D I A L", cx, cy - r * 0.56f, text)
+    }
+
+    private fun drawSeasonShading(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        val date = selectedInstant.atZone(zone).toLocalDate()
+        val active = Zodiac.seasonFor(date, north)
+        val year = date.year
+        val days = Astronomy.daysInYear(year).toDouble()
+        data class Span(val season: Zodiac.Season, val start: Double, val end: Double)
+        fun fraction(month: Int, day: Int) = (LocalDate.of(year, month, day).dayOfYear - 1).toDouble() / days
+        val spans = listOf(
+            Span(Zodiac.Season.WINTER, 0.0, fraction(3, 21)),
+            Span(Zodiac.Season.SPRING, fraction(3, 21), fraction(6, 21)),
+            Span(Zodiac.Season.SUMMER, fraction(6, 21), fraction(9, 23)),
+            Span(Zodiac.Season.FALL, fraction(9, 23), fraction(12, 22)),
+            Span(Zodiac.Season.WINTER, fraction(12, 22), 1.0),
+        )
+        val bounds = RectF(cx - r * .965f, cy - r * .965f, cx + r * .965f, cy + r * .965f)
+        spans.forEach { span ->
+            val displayed = displayedSeason(span.season)
+            val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = withAlpha(backgroundStyle.accentColor, if (displayed == active) 28 else 7)
+            }
+            canvas.drawArc(bounds, annualAngle(span.start).toFloat(),
+                ((if (north) -1 else 1) * 360.0 * (span.end - span.start)).toFloat(), true, wash)
+        }
+    }
+
+    private fun drawReverseSeasonRing(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        val localDate = selectedInstant.atZone(zone).toLocalDate()
+        val active = Zodiac.seasonFor(localDate, north)
+        val year = localDate.year
+        val days = Astronomy.daysInYear(year).toDouble()
+        fun fraction(month: Int, day: Int) = (LocalDate.of(year, month, day).dayOfYear - 1).toDouble() / days
+        data class SeasonArc(val season: Zodiac.Season, val start: Double, val end: Double, val labelAt: Double?)
+        val arcs = listOf(
+            SeasonArc(Zodiac.Season.WINTER, 0.0, fraction(3, 21), fraction(2, 1)),
+            SeasonArc(Zodiac.Season.SPRING, fraction(3, 21), fraction(6, 21), fraction(5, 6)),
+            SeasonArc(Zodiac.Season.SUMMER, fraction(6, 21), fraction(9, 23), fraction(8, 7)),
+            SeasonArc(Zodiac.Season.FALL, fraction(9, 23), fraction(12, 22), fraction(11, 6)),
+            SeasonArc(Zodiac.Season.WINTER, fraction(12, 22), 1.0, null),
+        )
+        val rect = RectF(cx - r * 1.025f, cy - r * 1.025f, cx + r * 1.025f, cy + r * 1.025f)
+        val brass = intArrayOf(0xFFDCA247.toInt(), 0xFFB36A32.toInt(), 0xFF8D553B.toInt(), 0xFF9BB8C6.toInt())
+        arcs.forEach { arc ->
+            val index = arc.season.ordinal
+            val displayedSeason = displayedSeason(arc.season)
+            val band = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = r * if (displayedSeason == active) .064f else .046f
+                strokeCap = Paint.Cap.BUTT
+                color = withAlpha(brass[index], if (displayedSeason == active) 215 else 72)
+            }
+            canvas.drawArc(rect, annualAngle(arc.start).toFloat(),
+                ((if (north) -1 else 1) * 360.0 * (arc.end - arc.start)).toFloat(), false, band)
+            val labelAt = arc.labelAt ?: return@forEach
+            val labelPaint = Paint(text).apply {
+                textSize = r * .027f
+                letterSpacing = .14f
+                color = withAlpha(instrumentColor, if (displayedSeason == active) 245 else 105)
+            }
+            drawRotatedText(canvas, displayedSeason.name, cx, cy, r * 1.025f, annualAngle(labelAt), labelPaint, true)
+        }
+        white.color = withAlpha(backgroundStyle.accentColor, 125)
+        white.strokeWidth = r * .003f
+        canvas.drawCircle(cx, cy, r * 1.057f, white)
+    }
+
+    private fun drawZodiacRing(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        val outer = r * .875f
+        val inner = r * .705f
+        val centerRadius = (outer + inner) / 2f
+        val activeSign = Zodiac.signFor(selectedInstant.atZone(zone).toLocalDate())
+        val natalSign = zodiacProfile.resolvedSign()
+        val sectorRect = RectF(cx - centerRadius, cy - centerRadius, cx + centerRadius, cy + centerRadius)
+        val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
+        }
+        Zodiac.Sign.entries.forEach { sign ->
+            val start = zodiacAngle(sign.ordinal * 30.0)
+            val sweep = if (north) -30f else 30f
+            val sector = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = outer - inner
+                strokeCap = Paint.Cap.BUTT
+                color = withAlpha(if (sign.ordinal % 2 == 0) 0xFFD5A24F.toInt() else 0xFF9B6C3A.toInt(),
+                    if (sign == activeSign) 112 else 44)
+            }
+            canvas.drawArc(sectorRect, start.toFloat(), sweep, false, sector)
+            white.color = withAlpha(instrumentColor, if (sign == activeSign) 210 else 80)
+            white.strokeWidth = if (sign == activeSign) r * .004f else r * .0014f
+            drawRadialLine(canvas, cx, cy, inner, outer, start, white)
+
+            val mid = zodiacAngle(sign.ordinal * 30.0 + 15.0)
+            val glyphPoint = point(cx, cy, r * .797f, mid)
+            glyphPaint.textSize = r * if (sign == activeSign || sign == natalSign) .078f else .061f
+            glyphPaint.color = when {
+                sign == natalSign -> 0xFFFFD889.toInt()
+                sign == activeSign -> instrumentColor
+                else -> withAlpha(0xFFFFE7B0.toInt(), 190)
+            }
+            canvas.drawText(sign.symbol, glyphPoint.first,
+                glyphPoint.second - (glyphPaint.ascent() + glyphPaint.descent()) / 2f, glyphPaint)
+            val signPaint = Paint(dimText).apply {
+                textSize = r * .020f
+                color = withAlpha(instrumentColor, if (sign == activeSign) 225 else 105)
+            }
+            drawRotatedText(canvas, sign.displayName.take(3).uppercase(), cx, cy, r * .735f, mid, signPaint, true)
+        }
+        white.color = withAlpha(instrumentColor, 150)
+        white.strokeWidth = r * .0024f
+        canvas.drawCircle(cx, cy, inner, white)
+        white.color = withAlpha(0xFFFFD58A.toInt(), 195)
+        canvas.drawCircle(cx, cy, outer, white)
+    }
+
+    private fun drawPlanetZodiacHands(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        val earthAngle = annualAngle(Astronomy.civilYearFraction(selectedInstant.atZone(zone)))
+        val earth = point(cx, cy, r * DialGeometry.EARTH_ORBIT, earthAngle)
+        val bodies = listOf(
+            Triple(Astronomy.Body.MERCURY, DialGeometry.MERCURY_ORBIT, 0xFF8EA5B8.toInt()),
+            Triple(Astronomy.Body.VENUS, DialGeometry.VENUS_ORBIT, 0xFFFFCE7A.toInt()),
+        )
+        bodies.forEach { (body, orbitRatio, color) ->
+            val heliocentricLongitude = Astronomy.heliocentricPosition(body, selectedInstant).longitudeDegrees
+            val planetAngle = if (north) 90.0 - heliocentricLongitude else heliocentricLongitude - 90.0
+            val planet = point(cx, cy, r * orbitRatio, planetAngle)
+            val longitude = Zodiac.geocentricLongitude(body, selectedInstant)
+            val sign = Zodiac.signForLongitude(longitude)
+            val signPoint = point(cx, cy, r * .692f, zodiacAngle(sign.ordinal * 30.0 + 15.0))
+            val hand = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = withAlpha(color, 145)
+                style = Paint.Style.STROKE
+                strokeWidth = r * .0022f
+                strokeCap = Paint.Cap.ROUND
+            }
+            canvas.drawLine(earth.first, earth.second, planet.first, planet.second, hand)
+            hand.pathEffect = DashPathEffect(floatArrayOf(r * .012f, r * .010f), 0f)
+            canvas.drawLine(planet.first, planet.second, signPoint.first, signPoint.second, hand)
+            fill.color = color
+            canvas.drawCircle(signPoint.first, signPoint.second, r * .0065f, fill)
+            val medallion = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = withAlpha(color, 225)
+                textSize = r * .034f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
+            }
+            canvas.drawText(sign.symbol, signPoint.first,
+                signPoint.second - r * .012f - (medallion.ascent() + medallion.descent()) / 2f, medallion)
+        }
+
+        val sunLongitude = Zodiac.sunLongitude(selectedInstant)
+        drawCelestialZodiacHand(canvas, earth, Pair(cx, cy), sunLongitude, r, 0xFFFFD17A.toInt(), crescent = false)
+        val moonLongitude = Astronomy.moonLongitudeDegrees(selectedInstant)
+        val moonAngle = zodiacAngle(moonLongitude)
+        val moon = Pair(
+            earth.first + cos(Math.toRadians(moonAngle)).toFloat() * r * .13f,
+            earth.second + sin(Math.toRadians(moonAngle)).toFloat() * r * .13f,
+        )
+        drawCelestialZodiacHand(canvas, earth, moon, moonLongitude, r, 0xFFFFEAB5.toInt(), crescent = true)
+    }
+
+    private fun drawCelestialZodiacHand(
+        canvas: Canvas,
+        earth: Pair<Float, Float>,
+        body: Pair<Float, Float>,
+        longitude: Double,
+        r: Float,
+        color: Int,
+        crescent: Boolean,
+    ) {
+        val sign = Zodiac.signForLongitude(longitude)
+        val (cx, cy, _) = geometry()
+        val signPoint = point(cx, cy, r * .692f, zodiacAngle(sign.ordinal * 30.0 + 15.0))
+        val hand = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = withAlpha(color, 135)
+            style = Paint.Style.STROKE
+            strokeWidth = r * .0021f
+        }
+        canvas.drawLine(earth.first, earth.second, body.first, body.second, hand)
+        hand.pathEffect = DashPathEffect(floatArrayOf(r * .010f, r * .011f), 0f)
+        canvas.drawLine(body.first, body.second, signPoint.first, signPoint.second, hand)
+        if (crescent) {
+            val crescentPath = Path().apply {
+                fillType = Path.FillType.EVEN_ODD
+                addCircle(body.first, body.second, r * .018f, Path.Direction.CW)
+                addCircle(body.first + r * .009f, body.second - r * .003f, r * .016f, Path.Direction.CW)
+            }
+            fill.color = color
+            canvas.drawPath(crescentPath, fill)
+        } else {
+            white.color = color
+            white.strokeWidth = r * .002f
+            canvas.drawCircle(body.first, body.second, r * .019f, white)
+            fill.color = color
+            canvas.drawCircle(body.first, body.second, r * .005f, fill)
+        }
+    }
+
+    private fun displayedSeason(northernSeason: Zodiac.Season): Zodiac.Season = if (north) northernSeason else when (northernSeason) {
+        Zodiac.Season.SPRING -> Zodiac.Season.FALL
+        Zodiac.Season.SUMMER -> Zodiac.Season.WINTER
+        Zodiac.Season.FALL -> Zodiac.Season.SPRING
+        Zodiac.Season.WINTER -> Zodiac.Season.SUMMER
     }
 
     private fun drawAnnualDial(canvas: Canvas, cx: Float, cy: Float, r: Float) {
@@ -342,6 +565,7 @@ class SundialView(context: Context) : View(context) {
             canvas.drawCircle(cx, cy + q * r * .86f, size, dotPaint)
             canvas.drawCircle(cx + q * r * .86f, cy, size, dotPaint)
         }
+        if (zodiacProfile.enabled) return
         dimText.textSize = r * .047f
         drawRotatedText(canvas, if (north) "SPRING" else "FALL", cx, cy, r * .79f, -45.0, dimText, true)
         drawRotatedText(canvas, if (north) "SUMMER" else "WINTER", cx, cy, r * .79f, -135.0, dimText, true)
@@ -362,7 +586,8 @@ class SundialView(context: Context) : View(context) {
             Astronomy.Body.EARTH to Color.rgb(160, 215, 240),
             Astronomy.Body.MARS to Color.rgb(220, 56, 70),
         )
-        for (body in Astronomy.Body.entries) {
+        // The instrument is intentionally intimate: only the Sun-facing inner planets and Earth.
+        for (body in listOf(Astronomy.Body.MERCURY, Astronomy.Body.VENUS, Astronomy.Body.EARTH)) {
             val orbitR = radii.getValue(body)
             val pathPaint = Paint(white).apply {
                 color = withAlpha(instrumentColor, if (body == Astronomy.Body.EARTH) 165 else 80)
@@ -747,6 +972,7 @@ class SundialView(context: Context) : View(context) {
         val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = instrumentColor; strokeWidth = 2f * density; strokeCap = Paint.Cap.ROUND }
         for (i in -1..1) canvas.drawLine(center - 10f * density, center + i * 7f * density,
             center + 10f * density, center + i * 7f * density, line)
+        if (zodiacProfile.enabled) drawNatalSignMedallion(canvas)
         if (showClock) {
             val local = selectedInstant.atZone(zone)
             text.textSize = 24f * density
@@ -761,6 +987,74 @@ class SundialView(context: Context) : View(context) {
             text.textSize = 15f * density
             canvas.drawText("RESET CURRENT TIME", width / 2f, height - 29f * density, text)
         }
+        if (zodiacProfile.enabled) horoscopeText?.let { drawHoroscopeCard(canvas, it) }
+    }
+
+    private fun drawNatalSignMedallion(canvas: Canvas) {
+        val sign = zodiacProfile.resolvedSign()
+        val x = width - 31f * density
+        val y = 31f * density
+        val aura = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(x, y, 29f * density,
+                intArrayOf(withAlpha(backgroundStyle.accentColor, 95), Color.TRANSPARENT),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
+        }
+        canvas.drawCircle(x, y, 29f * density, aura)
+        fill.color = 0xA8121010.toInt()
+        canvas.drawCircle(x, y, 22f * density, fill)
+        white.color = withAlpha(0xFFFFD889.toInt(), 205)
+        white.strokeWidth = density
+        canvas.drawCircle(x, y, 22f * density, white)
+        val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFDE9C.toInt()
+            textSize = 27f * density
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
+        }
+        canvas.drawText(sign.symbol, x, y - (glyph.ascent() + glyph.descent()) / 2f, glyph)
+    }
+
+    private fun drawHoroscopeCard(canvas: Canvas, value: String) {
+        val (_, cy, r) = geometry()
+        val cardWidth = minOf(width - 36f * density, 430f * density)
+        val left = (width - cardWidth) / 2f
+        val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = withAlpha(instrumentColor, 225)
+            textSize = 14f * density
+            typeface = resources.getFont(R.font.franklin_condensed)
+        }
+        val layout = StaticLayout.Builder.obtain(value, 0, value.length, bodyPaint, (cardWidth - 40f * density).toInt())
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setIncludePad(false)
+            .setLineSpacing(2f * density, 1f)
+            .setMaxLines(5)
+            .setEllipsize(android.text.TextUtils.TruncateAt.END)
+            .build()
+        val cardHeight = layout.height + 63f * density
+        val desiredTop = cy + r * 1.10f
+        val top = minOf(desiredTop, height - cardHeight - 18f * density)
+        val bounds = RectF(left, top, left + cardWidth, top + cardHeight)
+        val card = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(bounds.centerX(), bounds.top, cardWidth * .78f,
+                intArrayOf(withAlpha(backgroundStyle.haloColor, 238), 0xED090A0C.toInt()),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP)
+        }
+        canvas.drawRoundRect(bounds, 18f * density, 18f * density, card)
+        white.color = withAlpha(0xFFFFD889.toInt(), 145)
+        white.strokeWidth = density
+        canvas.drawRoundRect(bounds, 18f * density, 18f * density, white)
+
+        val sign = zodiacProfile.resolvedSign()
+        val titlePaint = Paint(text).apply {
+            color = 0xFFFFD889.toInt()
+            textSize = 13f * density
+            letterSpacing = .11f
+        }
+        canvas.drawText("${sign.symbol}  ${sign.displayName.uppercase()} · TODAY'S ORACLE", bounds.centerX(), top + 25f * density, titlePaint)
+        canvas.save()
+        canvas.translate(left + 20f * density, top + 43f * density)
+        layout.draw(canvas)
+        canvas.restore()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -906,6 +1200,9 @@ class SundialView(context: Context) : View(context) {
         lerp(Color.green(start).toFloat(), Color.green(end).toFloat(), progress).toInt(),
         lerp(Color.blue(start).toFloat(), Color.blue(end).toFloat(), progress).toInt(),
     )
+
+    private fun zodiacAngle(longitudeDegrees: Double): Double =
+        if (north) 90.0 - longitudeDegrees else longitudeDegrees - 90.0
 
     private fun annualAngle(fraction: Double): Double = DialGeometry.annualAngle(fraction, north)
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float = kotlin.math.hypot(x1 - x2, y1 - y2)

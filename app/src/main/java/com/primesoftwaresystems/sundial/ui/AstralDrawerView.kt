@@ -13,6 +13,7 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import com.primesoftwaresystems.sundial.R
+import com.primesoftwaresystems.sundial.astronomy.Zodiac
 import com.primesoftwaresystems.sundial.calendar.DeviceCalendar
 
 /** Native controls presented as a dark astronomical instrument side sheet. */
@@ -28,8 +29,15 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     private val hemisphereSwitch = controlSwitch("SOUTHERN HEMISPHERE")
     private val wallpaperSwitch = controlSwitch("15-MIN CELESTIAL WALLPAPER")
     private val lockWallpaperSwitch = controlSwitch("APPLY TO LOCK SCREEN")
+    private val zodiacSwitch = controlSwitch("ZODIAC INSTRUMENT")
+    private val zodiacDetailContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val backgroundContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val calendarContainer = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+    private lateinit var birthdayAction: TextView
+    private lateinit var birthTimeAction: TextView
+    private lateinit var zodiacSignAction: TextView
+    private lateinit var horoscopeAction: TextView
+    private lateinit var horoscopeStatus: TextView
     private val selectedCalendarIds = linkedSetOf<Long>()
     private var syncing = false
 
@@ -38,7 +46,12 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
     var onHemisphereChanged: ((Boolean) -> Unit)? = null
     var onDailyWallpaperChanged: ((Boolean) -> Unit)? = null
     var onLockWallpaperChanged: ((Boolean) -> Unit)? = null
+    var onZodiacChanged: ((Boolean) -> Unit)? = null
     var onBackgroundStyleChanged: ((CelestialStyle) -> Unit)? = null
+    var onBirthDateRequested: (() -> Unit)? = null
+    var onBirthTimeRequested: (() -> Unit)? = null
+    var onZodiacSignRequested: (() -> Unit)? = null
+    var onHoroscopeRequested: (() -> Unit)? = null
     var onResetNow: (() -> Unit)? = null
     var onQuit: (() -> Unit)? = null
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
@@ -64,6 +77,29 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
         content.addView(section("BACKGROUND COLOR"))
         content.addView(backgroundContainer)
         setBackgroundStyle(CelestialStylePreferences.get(context))
+        content.addView(section("OPTIONAL ZODIAC"))
+        content.addView(zodiacSwitch)
+        zodiacDetailContainer.addView(label(Zodiac.Sign.entries.joinToString(" ") { it.symbol }, 19f, 0xFFFFD88A.toInt()).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = .03f
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        birthdayAction = action("BIRTHDAY · NOT SET", "Choose birthday") { onBirthDateRequested?.invoke() }
+        birthTimeAction = action("BIRTH TIME · NOT SET", "Choose birth time") { onBirthTimeRequested?.invoke() }
+        zodiacSignAction = action("SUN SIGN · NOT SET", "Choose zodiac sign") { onZodiacSignRequested?.invoke() }
+        horoscopeAction = action("GENERATE ON-DEVICE HOROSCOPE", "Write today's private horoscope with Gemini Nano") {
+            onHoroscopeRequested?.invoke()
+        }
+        horoscopeStatus = label("Birth details stay on this device.", 12f, 0x99FFFFFF.toInt()).apply {
+            setPadding(dp(4), dp(7), dp(4), dp(15))
+        }
+        zodiacDetailContainer.addView(birthdayAction)
+        zodiacDetailContainer.addView(birthTimeAction)
+        zodiacDetailContainer.addView(zodiacSignAction)
+        zodiacDetailContainer.addView(horoscopeAction)
+        zodiacDetailContainer.addView(horoscopeStatus)
+        content.addView(zodiacDetailContainer)
+        setZodiacProfile(ZodiacPreferences.get(context))
         content.addView(section("GOOGLE CALENDAR"))
         content.addView(calendarContainer)
         content.addView(section("APPLICATION"))
@@ -74,6 +110,7 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
         hemisphereSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onHemisphereChanged?.invoke(checked) }
         wallpaperSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onDailyWallpaperChanged?.invoke(checked) }
         lockWallpaperSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onLockWallpaperChanged?.invoke(checked) }
+        zodiacSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onZodiacChanged?.invoke(checked) }
         showCalendarMessage("Loading synced calendars…")
     }
 
@@ -100,6 +137,23 @@ class AstralDrawerView(context: Context) : ScrollView(context) {
                 "Use ${style.displayName} in Sundial and wallpaper",
             ) { onBackgroundStyleChanged?.invoke(style) })
         }
+    }
+
+    fun setZodiacProfile(profile: ZodiacProfile) {
+        syncing = true
+        zodiacSwitch.isChecked = profile.enabled
+        syncing = false
+        zodiacDetailContainer.visibility = if (profile.enabled) View.VISIBLE else View.GONE
+        birthdayAction.text = "BIRTHDAY · ${profile.birthDate?.toString() ?: "NOT SET"}"
+        birthTimeAction.text = "BIRTH TIME · ${profile.birthTime?.toString() ?: "NOT SET"}"
+        val sign = profile.resolvedSign()
+        zodiacSignAction.text = "SUN SIGN · ${sign.symbol}  ${sign.displayName.uppercase()}"
+        horoscopeAction.isEnabled = profile.isComplete
+        horoscopeAction.alpha = if (profile.isComplete) 1f else .46f
+    }
+
+    fun setHoroscopeStatus(message: String) {
+        horoscopeStatus.text = message
     }
 
     fun setCalendars(calendars: List<DeviceCalendar>) {
