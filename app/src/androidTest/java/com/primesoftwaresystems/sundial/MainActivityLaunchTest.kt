@@ -11,7 +11,6 @@ import com.primesoftwaresystems.sundial.ui.SundialView
 import com.primesoftwaresystems.sundial.ui.CelestialStyle
 import com.primesoftwaresystems.sundial.ui.CelestialStylePreferences
 import com.primesoftwaresystems.sundial.wallpaper.DailyWallpaperScheduler
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -46,7 +45,9 @@ class MainActivityLaunchTest {
                 Instant.parse("2024-02-29T12:00:00Z"),
             )
             try {
-                assertEquals(Color.BLACK, bitmap.getPixel(12, 12))
+                val corner = bitmap.getPixel(12, 12)
+                assertTrue("Void background should remain dark without being flat black",
+                    Color.red(corner) + Color.green(corner) + Color.blue(corner) < 80)
                 val sun = bitmap.getPixel(180, (800 * .47f).toInt())
                 assertTrue("Wallpaper Sun should be luminous", Color.red(sun) > 160)
             } finally {

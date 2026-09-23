@@ -19,11 +19,17 @@ class EarthSphereRendererTest {
         val renderer = EarthSphereRenderer(texture)
         val first = renderer.render(256, 30.0, north = true)
         val second = renderer.render(256, 120.0, north = true)
+        val southern = renderer.render(256, 120.0, north = false)
 
         assertNotSame(second, first)
+        assertNotSame(southern, second)
         assertFalse(first.isRecycled)
         assertFalse(second.isRecycled)
+        assertFalse(southern.isRecycled)
         val center = second.getPixel(second.width / 2, second.height / 2)
         assertTrue("Rotated Earth center must remain visible", Color.red(center) + Color.green(center) + Color.blue(center) > 85)
+        val southernCenter = southern.getPixel(southern.width / 2, southern.height / 2)
+        assertTrue("South-pole Earth center must remain visible",
+            Color.red(southernCenter) + Color.green(southernCenter) + Color.blue(southernCenter) > 85)
     }
 }

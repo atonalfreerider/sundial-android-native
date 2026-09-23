@@ -1,19 +1,19 @@
 package com.primesoftwaresystems.sundial.ui
 
 import android.content.Context
-import android.graphics.Color
 
 enum class CelestialStyle(
     val displayName: String,
     val baseColor: Int,
     val haloColor: Int,
     val accentColor: Int,
+    val instrumentColor: Int,
 ) {
-    VOID_BLACK("Void Black", Color.BLACK, 0xFF080808.toInt(), 0xFFFFD37A.toInt()),
-    CRIMSON_NEBULA("Crimson Nebula", 0xFF160003.toInt(), 0xFF5A0715.toInt(), 0xFFFFA27B.toInt()),
-    DEEP_SPACE_BLUE("Deep Space Blue", 0xFF01050E.toInt(), 0xFF092A4A.toInt(), 0xFF8ED9FF.toInt()),
-    COSMIC_VIOLET("Cosmic Violet", 0xFF08010F.toInt(), 0xFF321055.toInt(), 0xFFD7A4FF.toInt()),
-    SOLAR_BRONZE("Solar Bronze", 0xFF0D0701.toInt(), 0xFF3D2108.toInt(), 0xFFFFC96B.toInt()),
+    VOID_BLACK("Void Black", 0xFF010101.toInt(), 0xFF17130D.toInt(), 0xFFFFD37A.toInt(), 0xFFF2EFE7.toInt()),
+    CRIMSON_NEBULA("Crimson Nebula", 0xFF27030B.toInt(), 0xFF78152B.toInt(), 0xFFFFA27B.toInt(), 0xFFFFE5DE.toInt()),
+    DEEP_SPACE_BLUE("Deep Space Blue", 0xFF031027.toInt(), 0xFF155284.toInt(), 0xFF8ED9FF.toInt(), 0xFFE2F3FF.toInt()),
+    COSMIC_VIOLET("Cosmic Violet", 0xFF170628.toInt(), 0xFF60298A.toInt(), 0xFFD7A4FF.toInt(), 0xFFF3E5FF.toInt()),
+    SOLAR_BRONZE("Solar Bronze", 0xFF251204.toInt(), 0xFF754313.toInt(), 0xFFFFC96B.toInt(), 0xFFFFEFD0.toInt()),
 }
 
 object CelestialStylePreferences {
