@@ -185,9 +185,10 @@ class MainActivity : Activity() {
     }
 
     private fun loadOccurrences(ids: Set<Long>) {
+        // Read the view's year on the main thread; the view keeps changing it while time is scrubbed.
+        val displayedYear = sundialView.displayedYear
         calendarExecutor.execute {
             val zone = ZoneId.systemDefault()
-            val displayedYear = sundialView.displayedYear
             val begin = LocalDate.of(displayedYear, 1, 1).atStartOfDay(zone).toInstant()
             val end = LocalDate.of(displayedYear + 1, 1, 2).atStartOfDay(zone).toInstant()
             val occurrences = repository.loadInstances(ids, begin, end, zone)

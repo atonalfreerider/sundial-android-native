@@ -112,9 +112,21 @@ object Astronomy {
         )
     }
 
-    fun moonPhaseDegrees(instant: Instant): Double {
-        val apparentSunLongitude = heliocentricPosition(Body.EARTH, instant).longitudeDegrees + 180.0
-        return normalizeDegrees(moonLongitudeDegrees(instant) - apparentSunLongitude)
+    /**
+     * Moon–Sun elongation in degrees. The lunar series is referred to the equinox of date, so the
+     * J2000 solar longitude is precessed into the same frame before the two are compared.
+     */
+    fun moonPhaseDegrees(instant: Instant): Double =
+        normalizeDegrees(moonLongitudeDegrees(instant) - sunLongitudeOfDate(instant))
+
+    /** Geocentric solar longitude referred to the mean equinox of date. */
+    fun sunLongitudeOfDate(instant: Instant): Double =
+        normalizeDegrees(heliocentricPosition(Body.EARTH, instant).longitudeDegrees + 180.0 + precessionDegrees(instant))
+
+    /** General precession in longitude from J2000 to the equinox of date. */
+    fun precessionDegrees(instant: Instant): Double {
+        val centuries = (julianDate(instant) - JULIAN_DATE_J2000) / 36_525.0
+        return 1.396_971_3 * centuries + 0.000_308_6 * centuries * centuries
     }
 
     fun daysInYear(year: Int): Int = if (LocalDate.of(year, 1, 1).isLeapYear) 366 else 365

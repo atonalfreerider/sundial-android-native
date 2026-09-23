@@ -1,5 +1,7 @@
 package com.primesoftwaresystems.sundial.ui
 
+import kotlin.math.pow
+
 /** Ratios reconstructed from the original Unity instrument's 150-unit annual dial. */
 object DialGeometry {
     const val MERCURY_ORBIT = 0.1935f
@@ -9,9 +11,25 @@ object DialGeometry {
 
     // The native viewport radius is the lunar dial, rather than Unity's annual dial.
     const val MOON_DIAL = 0.965f
-    const val HOUR_DIAL = MOON_DIAL * (60f / 67.5f)
-    const val TIME_ZONE_DIAL = MOON_DIAL * (42f / 67.5f)
-    const val EARTH_RADIUS = MOON_DIAL * (37.5f / 67.5f)
+    /** One Unity world unit on the Earth instrument, whose lunar dial is 67.5 units. */
+    private const val EARTH_UNIT = MOON_DIAL / 67.5f
+    const val HOUR_DIAL = 60f * EARTH_UNIT
+    const val EARTH_RADIUS = 37.5f * EARTH_UNIT
+
+    /**
+     * Unity's local wheel: a thin ring hugging the globe with 24 outward hour teeth. The tooth at
+     * the selected zone's local time is long, with a shorter red tooth inscribed in it.
+     */
+    const val LOCAL_WHEEL = 42f * EARTH_UNIT
+    const val LOCAL_WHEEL_SMALL_TOOTH = 3f * EARTH_UNIT
+    const val LOCAL_WHEEL_BIG_TOOTH = 15f * EARTH_UNIT
+    const val LOCAL_WHEEL_RED_TOOTH = 10.5f * EARTH_UNIT
+    const val LOCAL_WHEEL_RED_HALF_BASE = 1.125f * EARTH_UNIT
+    /** Half-width of each tooth's base, Unity's 0.04 rad. */
+    const val LOCAL_WHEEL_TOOTH_HALF_ANGLE = 2.2918
+    /** The translucent band inside the wheel that spans the zones already on the new date. */
+    const val DATE_STRIP_OUTER = 41f * EARTH_UNIT
+    const val DATE_STRIP_INNER = 38.5f * EARTH_UNIT
 
     /** Matches Unity's portrait earthOrthoSize = solOrthoSize * .45 camera move. */
     const val EARTH_CAMERA_ZOOM = 1f / .45f
@@ -78,27 +96,36 @@ object DialGeometry {
     /** The annual dial as seen from the Earth camera: the Earth sits Unity's .5 system radius from the Sun. */
     const val GEOCENTRIC_SUN_DISTANCE = EARTH_ORBIT * EARTH_CAMERA_ZOOM
 
-    fun yearEventBand(annualRadius: Float, calendarIndex: Int): EventBand {
+    /** [minThickness] lets a band grow past Unity's proportion so its label stays legible. */
+    fun yearEventBand(annualRadius: Float, calendarIndex: Int, minThickness: Float = 0f): EventBand {
         val earthDialRadius = annualRadius * .4f
-        val thickness = earthDialRadius * .1166f
+        val thickness = maxOf(earthDialRadius * .1166f, minThickness)
         val outer = annualRadius - earthDialRadius * .0166f - calendarIndex.coerceAtLeast(0) * thickness
         return EventBand(outer - thickness / 2f, thickness)
     }
 
-    fun dayEventBand(hourRadius: Float, calendarIndex: Int): EventBand {
-        val thickness = hourRadius * .1166f
+    fun dayEventBand(hourRadius: Float, calendarIndex: Int, minThickness: Float = 0f): EventBand {
+        val thickness = maxOf(hourRadius * .1166f, minThickness)
         val outer = hourRadius - hourRadius * .0166f - calendarIndex.coerceAtLeast(0) * thickness
         return EventBand(outer - thickness / 2f, thickness)
     }
 
-    data class EarthFlightFrame(val cameraScale: Float, val earthSystemScale: Float)
+    /** How much of the camera zoom the distant star field shows: a little parallax sells the flight. */
+    const val SKY_PARALLAX = .35f
 
+    data class EarthFlightFrame(val cameraScale: Float, val earthSystemScale: Float, val skyScale: Float)
+
+    /**
+     * Camera for the flight from the Sun-centred dial to the Earth. Scales interpolate
+     * geometrically, so the zoom feels like constant forward motion and the Earth swells like an
+     * approaching body, the way a fly-in from space looks (deliberately not to scale).
+     */
     fun earthFlightFrame(progress: Float): EarthFlightFrame {
         val p = progress.coerceIn(0f, 1f)
         return EarthFlightFrame(
-            cameraScale = 1f + (EARTH_CAMERA_ZOOM - 1f) * p,
-            earthSystemScale = HELIOCENTRIC_EARTH_RADIUS / EARTH_RADIUS +
-                (1f - HELIOCENTRIC_EARTH_RADIUS / EARTH_RADIUS) * p,
+            cameraScale = EARTH_CAMERA_ZOOM.pow(p),
+            earthSystemScale = (HELIOCENTRIC_EARTH_RADIUS / EARTH_RADIUS).pow(1f - p),
+            skyScale = EARTH_CAMERA_ZOOM.pow(p * SKY_PARALLAX),
         )
     }
 }

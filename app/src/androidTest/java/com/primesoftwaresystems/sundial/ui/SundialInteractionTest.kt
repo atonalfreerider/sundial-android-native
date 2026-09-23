@@ -54,7 +54,7 @@ class SundialInteractionTest {
             view.setCalendarOccurrences(listOf(event(1, "First event"), event(2, "Second event")))
             val fraction = (start.dayOfYear - 1 + 15.0) / (if (start.isLeapYear) 366.0 else 365.0)
             val angle = Math.toRadians(DialGeometry.annualAngle(fraction, north = true))
-            val radius = DialGeometry.yearEventBand(507.6f, 0).centerRadius
+            val radius = view.yearEventBandForTest(7L).centerRadius
             val x = 540f + kotlin.math.cos(angle).toFloat() * radius
             val y = 2_424f * .47f + kotlin.math.sin(angle).toFloat() * radius
 
@@ -70,7 +70,7 @@ class SundialInteractionTest {
         }
     }
 
-    @Test fun galacticTimeOnlyMovesAfterDraggingTheSunAlongTravelAxis() {
+    @Test fun galacticRibbonScrubsWithoutLimitAgainstTheDirectionOfTravel() {
         onLaidOutView { view ->
             view.setGalacticVisible(true)
             val render = Bitmap.createBitmap(1_080, 2_424, Bitmap.Config.ARGB_8888)
@@ -84,6 +84,18 @@ class SundialInteractionTest {
             send(view, MotionEvent.ACTION_MOVE, sun.first + 145f, sun.second + 230f)
             assertNotEquals("Dragging the galactic Sun must scrub time", before, view.selectedInstantForTest)
             send(view, MotionEvent.ACTION_UP, sun.first + 145f, sun.second + 230f)
+            assert(view.selectedInstantForTest.isAfter(before)) { "Pulling the ribbon back must move time forward" }
+
+            // Keep pulling well past the years that used to bound the view.
+            val start = view.selectedInstantForTest
+            repeat(6) {
+                send(view, MotionEvent.ACTION_DOWN, sun.first, sun.second)
+                send(view, MotionEvent.ACTION_MOVE, sun.first + 290f, sun.second + 460f)
+                send(view, MotionEvent.ACTION_UP, sun.first + 290f, sun.second + 460f)
+            }
+            val years = java.time.Duration.between(start, view.selectedInstantForTest).toDays() / 365.25
+            assert(years > 8) { "Galactic scrubbing must not stop at a fixed window, moved $years years" }
+            view.draw(Canvas(Bitmap.createBitmap(1_080, 2_424, Bitmap.Config.ARGB_8888)))
         }
     }
 

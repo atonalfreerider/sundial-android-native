@@ -30,6 +30,15 @@ object TimeZoneDial {
         )
     }
 
+    /**
+     * Hour-ring position of the international date line: the local time of day just west of it
+     * (UTC+12). Zones from local midnight round to this point already have the new date.
+     */
+    fun datelineHours(instant: Instant): Double {
+        val local = instant.atOffset(ZoneOffset.ofHours(12))
+        return local.hour + local.minute / 60.0 + local.second / 3_600.0
+    }
+
     fun localOffsetMinutes(instant: Instant, zoneId: ZoneId): Int =
         zoneId.rules.getOffset(instant).totalSeconds / 60
 

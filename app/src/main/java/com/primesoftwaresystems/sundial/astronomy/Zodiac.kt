@@ -69,13 +69,10 @@ object Zodiac {
         val earth = Astronomy.heliocentricPosition(Astronomy.Body.EARTH, instant)
         val planet = Astronomy.heliocentricPosition(body, instant)
         val j2000Longitude = Math.toDegrees(atan2(planet.y - earth.y, planet.x - earth.x))
-        return Astronomy.normalizeDegrees(j2000Longitude + precessionDegrees(instant))
+        return Astronomy.normalizeDegrees(j2000Longitude + Astronomy.precessionDegrees(instant))
     }
 
-    fun sunLongitude(instant: Instant): Double {
-        val earth = Astronomy.heliocentricPosition(Astronomy.Body.EARTH, instant)
-        return Astronomy.normalizeDegrees(earth.longitudeDegrees + 180.0 + precessionDegrees(instant))
-    }
+    fun sunLongitude(instant: Instant): Double = Astronomy.sunLongitudeOfDate(instant)
 
     fun placements(instant: Instant): List<Placement> = listOf(
         Placement("SUN", "☉", sunLongitude(instant), signForLongitude(sunLongitude(instant))),
@@ -83,9 +80,4 @@ object Zodiac {
         Placement("MERCURY", "☿", geocentricLongitude(Astronomy.Body.MERCURY, instant), signForLongitude(geocentricLongitude(Astronomy.Body.MERCURY, instant))),
         Placement("VENUS", "♀", geocentricLongitude(Astronomy.Body.VENUS, instant), signForLongitude(geocentricLongitude(Astronomy.Body.VENUS, instant))),
     )
-
-    private fun precessionDegrees(instant: Instant): Double {
-        val centuries = (Astronomy.julianDate(instant) - Astronomy.JULIAN_DATE_J2000) / 36_525.0
-        return 1.397 * centuries + 0.00031 * centuries * centuries
-    }
 }

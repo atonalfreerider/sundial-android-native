@@ -88,5 +88,28 @@ class DialGeometryTest {
         assertEquals(1f, end.earthSystemScale, .0001f)
         assertTrue(middle.cameraScale in start.cameraScale..end.cameraScale)
         assertTrue(middle.earthSystemScale in start.earthSystemScale..end.earthSystemScale)
+        // Geometric zoom: halfway through the flight is halfway in perceived depth.
+        assertEquals(kotlin.math.sqrt(start.cameraScale * end.cameraScale), middle.cameraScale, .0001f)
+        assertEquals(kotlin.math.sqrt(start.earthSystemScale * end.earthSystemScale), middle.earthSystemScale, .0001f)
+        assertEquals(1f, start.skyScale, .0001f)
+        assertTrue(end.skyScale in 1f..end.cameraScale)
+    }
+
+    @Test fun `local wheel hugs the globe with Unity's inscribed red tooth`() {
+        assertTrue(DialGeometry.LOCAL_WHEEL > DialGeometry.EARTH_RADIUS)
+        assertTrue(DialGeometry.DATE_STRIP_INNER > DialGeometry.EARTH_RADIUS)
+        assertTrue(DialGeometry.DATE_STRIP_OUTER < DialGeometry.LOCAL_WHEEL)
+        assertTrue(DialGeometry.LOCAL_WHEEL_RED_TOOTH < DialGeometry.LOCAL_WHEEL_BIG_TOOTH)
+        val bigToothHalfBase = DialGeometry.LOCAL_WHEEL * Math.toRadians(DialGeometry.LOCAL_WHEEL_TOOTH_HALF_ANGLE)
+        assertTrue(DialGeometry.LOCAL_WHEEL_RED_HALF_BASE < bigToothHalfBase)
+        assertTrue(DialGeometry.LOCAL_WHEEL + DialGeometry.LOCAL_WHEEL_BIG_TOOTH < DialGeometry.HOUR_DIAL)
+    }
+
+    @Test fun `event bands grow to fit legible labels`() {
+        val unity = DialGeometry.yearEventBand(500f, 0)
+        val legible = DialGeometry.yearEventBand(500f, 0, minThickness = 40f)
+        assertEquals(40f, legible.thickness, .001f)
+        assertTrue(legible.thickness > unity.thickness)
+        assertEquals(legible.thickness, legible.centerRadius - DialGeometry.yearEventBand(500f, 1, 40f).centerRadius, .001f)
     }
 }

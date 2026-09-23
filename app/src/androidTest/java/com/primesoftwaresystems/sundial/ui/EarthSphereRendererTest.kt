@@ -17,12 +17,12 @@ class EarthSphereRendererTest {
     @Test fun consecutiveRotationsKeepBothHardwareFramesAliveAndVisible() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val texture = BitmapFactory.decodeResource(context.resources, R.drawable.earth_texture)
-        val renderer = EarthSphereRenderer(texture)
+        val renderer = EarthSphereRenderer(texture, 256)
         val firstInstant = Instant.parse("2026-03-20T00:00:00Z")
         val secondInstant = firstInstant.plusSeconds(6 * 3_600L)
-        val first = renderer.render(256, firstInstant, north = true)
-        val second = renderer.render(256, secondInstant, north = true)
-        val southern = renderer.render(256, secondInstant, north = false)
+        val first = renderer.render(firstInstant, north = true)
+        val second = renderer.render(secondInstant, north = true)
+        val southern = renderer.render(secondInstant, north = false)
 
         assertNotSame(second, first)
         assertNotSame(southern, second)
@@ -38,7 +38,7 @@ class EarthSphereRendererTest {
                 Color.red(southernCenter) + Color.green(southernCenter) + Color.blue(southernCenter) > 34)
 
         repeat(14) { index ->
-            val frame = renderer.render(256, firstInstant.plusSeconds(index * 7_200L), north = true)
+            val frame = renderer.render(firstInstant.plusSeconds(index * 7_200L), north = true)
             val pixel = frame.getPixel(frame.width / 2, frame.height / 2)
             assertFalse("Earth frame $index must not disappear", frame.isRecycled)
             assertTrue(Color.alpha(pixel) > 200 &&
@@ -50,8 +50,8 @@ class EarthSphereRendererTest {
         val neutralTexture = android.graphics.Bitmap.createBitmap(8, 4, android.graphics.Bitmap.Config.ARGB_8888).apply {
             eraseColor(Color.rgb(170, 170, 170))
         }
-        val earth = EarthSphereRenderer(neutralTexture).render(
-            240, Instant.parse("2026-09-22T19:30:00Z"), north = true,
+        val earth = EarthSphereRenderer(neutralTexture, 240).render(
+            Instant.parse("2026-09-22T19:30:00Z"), north = true,
         )
         val upper = averageLuma(earth, 45, 95)
         val lower = averageLuma(earth, 145, 195)

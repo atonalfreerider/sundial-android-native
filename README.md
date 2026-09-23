@@ -36,9 +36,10 @@ The app requests read-only calendar permission. Google calendars already synchro
 
 ## Controls
 
-- Tap the Sun in the heliocentric dial to open the geocentric dial.
-- Tap the Earth in the geocentric dial to return.
+- Tap the Sun in the heliocentric dial to fly in to the geocentric dial; tap the Earth to fly back out.
 - Drag the Earth hand/year dial or Moon in the geocentric view to scrub time.
+- In the geocentric view, the local wheel around the globe points its long, red-tipped tooth at the selected zone's local time. Tap the wheel to choose another zone; the translucent strip spans the zones already on the new date.
+- In the galactic view, drag anywhere to slide the ribbon of years under the Sun (there is no end to it); tap to return.
 - Tap the top-left menu for clock, hemisphere, galactic view, and calendar selection.
 - **15-MIN CELESTIAL WALLPAPER** renders the live Earth-centered dial without app controls and refreshes it every 15 minutes. It targets the lock screen by default; disable **APPLY TO LOCK SCREEN** to use the home screen instead.
 - **BACKGROUND COLOR** offers Void Black, Crimson Nebula, Deep Space Blue, Cosmic Violet, and Solar Bronze. The chosen style is shared by the app and generated wallpaper.

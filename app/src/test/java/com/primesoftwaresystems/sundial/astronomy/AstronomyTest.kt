@@ -65,6 +65,12 @@ class AstronomyTest {
         assertTrue("phase=$phase", distanceFromNew < 2.0)
     }
 
+    @Test fun `lunar phase compares Moon and Sun in the same equinox frame`() {
+        // New Moon of the 8 April 2024 total solar eclipse, 18:21 UTC.
+        val phase = Astronomy.moonPhaseDegrees(Instant.parse("2024-04-08T18:21:00Z"))
+        assertTrue("phase=$phase", minOf(phase, 360.0 - phase) < .5)
+    }
+
     @Test fun `lunar phase is near full at a published full moon`() {
         val phase = Astronomy.moonPhaseDegrees(Instant.parse("2024-03-25T07:00:00Z"))
         assertTrue("phase=$phase", abs(phase - 180.0) < 3.0)

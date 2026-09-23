@@ -38,6 +38,11 @@ class TimeZoneDialTest {
         assertEquals("Pacific Time", TimeZoneDial.localName(zone, Instant.parse("2026-09-22T19:30:00Z")))
     }
 
+    @Test fun `date line sits at the local time of UTC+12`() {
+        assertEquals(7.5, TimeZoneDial.datelineHours(Instant.parse("2026-09-22T19:30:00Z")), 1e-9)
+        assertEquals(0.0, TimeZoneDial.datelineHours(Instant.parse("2026-09-22T12:00:00Z")), 1e-9)
+    }
+
     @Test fun `touch selection resolves to closest common timezone spoke`() {
         val spokes = TimeZoneDial.spokes(Instant.parse("2026-09-22T19:30:00Z"))
         val eastern = spokes.single { it.offsetHours == -5 }
