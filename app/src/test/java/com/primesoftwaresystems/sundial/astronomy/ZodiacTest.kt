@@ -35,7 +35,7 @@ class ZodiacTest {
 
     @Test fun `geocentric placements are finite and exclude Earth`() {
         val placements = Zodiac.placements(Instant.parse("2026-09-22T12:00:00Z"))
-        assertEquals(listOf("SUN", "MOON", "MERCURY", "VENUS"), placements.map { it.label })
+        assertEquals(listOf("SUN", "MOON", "MERCURY", "VENUS", "MARS"), placements.map { it.label })
         assertTrue(placements.all { it.longitudeDegrees in 0.0..<360.0 })
     }
 

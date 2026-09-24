@@ -2,18 +2,34 @@ package com.primesoftwaresystems.sundial.ui
 
 import android.content.Context
 
+/**
+ * Aesthetics shared by the app and its wallpapers. Sky styles draw a luminous instrument on a
+ * night sky; [brassFace] engraves it into a polished brass watch face instead, with dark
+ * [instrumentColor] ink on the metal and a light [chromeColor] for anything drawn off the face.
+ */
 enum class CelestialStyle(
     val displayName: String,
     val baseColor: Int,
     val haloColor: Int,
     val accentColor: Int,
     val instrumentColor: Int,
+    val chromeColor: Int = instrumentColor,
+    val brassFace: Boolean = false,
 ) {
     VOID_BLACK("Void Black", 0xFF010101.toInt(), 0xFF17130D.toInt(), 0xFFFFD37A.toInt(), 0xFFF2EFE7.toInt()),
     CRIMSON_NEBULA("Crimson Nebula", 0xFF27030B.toInt(), 0xFF78152B.toInt(), 0xFFFFA27B.toInt(), 0xFFFFE5DE.toInt()),
     DEEP_SPACE_BLUE("Deep Space Blue", 0xFF031027.toInt(), 0xFF155284.toInt(), 0xFF8ED9FF.toInt(), 0xFFE2F3FF.toInt()),
     COSMIC_VIOLET("Cosmic Violet", 0xFF170628.toInt(), 0xFF60298A.toInt(), 0xFFD7A4FF.toInt(), 0xFFF3E5FF.toInt()),
     SOLAR_BRONZE("Solar Bronze", 0xFF251204.toInt(), 0xFF754313.toInt(), 0xFFFFC96B.toInt(), 0xFFFFEFD0.toInt()),
+    BRASS_WATCH(
+        "Brass Watch",
+        baseColor = 0xFF0B0A09.toInt(),
+        haloColor = 0xFF2C2822.toInt(),
+        accentColor = 0xFF8A6526.toInt(),
+        instrumentColor = 0xFF3A2710.toInt(),
+        chromeColor = 0xFFEBD393.toInt(),
+        brassFace = true,
+    ),
 }
 
 object CelestialStylePreferences {

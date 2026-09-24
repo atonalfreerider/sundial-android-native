@@ -3,28 +3,24 @@ package com.primesoftwaresystems.sundial
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.TimePickerDialog
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.text.InputFilter
+import android.os.Build
 import android.os.Bundle
-import android.text.InputType
-import android.view.Gravity
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
-import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
-import com.primesoftwaresystems.sundial.calendar.CalendarRepository
 import com.primesoftwaresystems.sundial.astronomy.Zodiac
+import com.primesoftwaresystems.sundial.calendar.CalendarRepository
 import com.primesoftwaresystems.sundial.horoscope.HoroscopeGenerator
-import com.primesoftwaresystems.sundial.ui.AstralDrawerView
-import com.primesoftwaresystems.sundial.ui.BirthDateInput
+import com.primesoftwaresystems.sundial.ui.AstrologyPanel
+import com.primesoftwaresystems.sundial.ui.CalendarPanel
+import com.primesoftwaresystems.sundial.ui.CelestialStylePreferences
+import com.primesoftwaresystems.sundial.ui.SettingsPanel
 import com.primesoftwaresystems.sundial.ui.SundialView
+import com.primesoftwaresystems.sundial.ui.TuckMenuHost
 import com.primesoftwaresystems.sundial.ui.ZodiacPreferences
 import com.primesoftwaresystems.sundial.ui.ZodiacProfile
 import com.primesoftwaresystems.sundial.wallpaper.DailyWallpaperScheduler
@@ -35,33 +31,42 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private lateinit var sundialView: SundialView
-    private lateinit var drawerLayout: DrawerLayout
-    private lateinit var drawerView: AstralDrawerView
+    private lateinit var host: TuckMenuHost
+    private lateinit var settingsPanel: SettingsPanel
+    private lateinit var calendarPanel: CalendarPanel
+    private lateinit var astrologyPanel: AstrologyPanel
     private val calendarExecutor = Executors.newSingleThreadExecutor()
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val handler = Handler(Looper.getMainLooper())
     private val horoscopeGenerator = HoroscopeGenerator()
     private var horoscopeGenerating = false
     private lateinit var repository: CalendarRepository
     private lateinit var zodiacProfile: ZodiacProfile
+    private val automaticHoroscope = Runnable { generateHoroscope(automatic = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Let the tuck menus see the keyboard's insets and rise above it themselves.
+            window.setDecorFitsSystemWindows(false)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+        } else {
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN)
+        }
         repository = CalendarRepository(this)
         zodiacProfile = ZodiacPreferences.get(this)
 
         sundialView = SundialView(this).apply {
             id = R.id.sundial_view
-            onMenuRequested = { drawerLayout.openDrawer(GravityCompat.START) }
             onControlsChanged = {
-                if (::drawerView.isInitialized) {
-                    drawerView.syncControls(
+                if (::settingsPanel.isInitialized) {
+                    settingsPanel.syncControls(
                         this,
                         DailyWallpaperScheduler.isEnabled(this@MainActivity),
                         DailyWallpaperScheduler.usesLockScreen(this@MainActivity),
@@ -70,10 +75,12 @@ class MainActivity : Activity() {
             }
             onCalendarSelectionChanged = { ids -> loadOccurrences(ids) }
         }
-        drawerView = AstralDrawerView(this).apply {
-            id = R.id.astral_drawer
+        settingsPanel = SettingsPanel(this).apply {
             onClockChanged = { sundialView.setClockVisible(it) }
-            onGalacticChanged = { sundialView.setGalacticVisible(it) }
+            onGalacticChanged = {
+                sundialView.setGalacticVisible(it)
+                host.close()
+            }
             onHemisphereChanged = { sundialView.setSouthernHemisphere(it) }
             onDailyWallpaperChanged = { enabled ->
                 DailyWallpaperScheduler.setEnabled(this@MainActivity, enabled)
@@ -91,60 +98,68 @@ class MainActivity : Activity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
-            onZodiacChanged = { enabled -> updateZodiacProfile(zodiacProfile.copy(enabled = enabled)) }
-            onBirthDateRequested = { showBirthDatePicker() }
-            onBirthTimeRequested = { showBirthTimePicker() }
-            onZodiacSignRequested = { showZodiacSignPicker() }
-            onHoroscopeRequested = { generateHoroscope() }
             onBackgroundStyleChanged = { style ->
                 sundialView.setBackgroundStyle(style)
                 setBackgroundStyle(style)
+                host.iconColor = style.chromeColor
                 refreshWallpapers()
             }
             onResetNow = {
                 sundialView.resetNow()
                 refreshWallpapers()
+                host.close()
             }
             onQuit = { finishAndRemoveTask() }
-            onCalendarSelectionChanged = { ids ->
-                sundialView.setSelectedCalendarIds(ids)
-                loadOccurrences(ids)
-            }
             syncControls(
                 sundialView,
                 DailyWallpaperScheduler.isEnabled(this@MainActivity),
                 DailyWallpaperScheduler.usesLockScreen(this@MainActivity),
             )
+        }
+        calendarPanel = CalendarPanel(this).apply {
+            onCalendarSelectionChanged = { ids ->
+                sundialView.setSelectedCalendarIds(ids)
+                loadOccurrences(ids)
+            }
+        }
+        astrologyPanel = AstrologyPanel(this).apply {
+            onZodiacChanged = { enabled -> updateZodiacProfile(zodiacProfile.copy(enabled = enabled), horoscopeDelayMs = 0L) }
+            onBirthDateChanged = { date ->
+                updateZodiacProfile(zodiacProfile.copy(birthDate = date, selectedSign = Zodiac.signFor(date)))
+            }
+            onBirthTimeChanged = { time -> updateZodiacProfile(zodiacProfile.copy(birthTime = time)) }
+            onZodiacSignRequested = { showZodiacSignPicker() }
+            onHoroscopeRequested = { generateHoroscope(automatic = false) }
             setZodiacProfile(zodiacProfile)
         }
-        drawerLayout = DrawerLayout(this).apply {
-            id = R.id.drawer_layout
-            setScrimColor(0xB8000000.toInt())
-            addView(sundialView, DrawerLayout.LayoutParams(
-                DrawerLayout.LayoutParams.MATCH_PARENT,
-                DrawerLayout.LayoutParams.MATCH_PARENT,
-            ))
-            addView(drawerView, DrawerLayout.LayoutParams(
-                minOf((resources.displayMetrics.widthPixels * .86f).toInt(), dp(376)),
-                DrawerLayout.LayoutParams.MATCH_PARENT,
-                Gravity.START,
-            ))
+        host = TuckMenuHost(this).apply {
+            id = R.id.tuck_host
+            setContent(sundialView)
+            addMenu(TuckMenuHost.Corner.TOP_START, R.drawable.ic_tuck_settings, "Settings", settingsPanel)
+                .panel.id = R.id.settings_menu
+            addMenu(TuckMenuHost.Corner.BOTTOM_START, R.drawable.ic_tuck_calendar, "Calendars", calendarPanel)
+                .panel.id = R.id.calendar_menu
+            addMenu(TuckMenuHost.Corner.BOTTOM_END, R.drawable.ic_tuck_astrology, "Astrology", astrologyPanel)
+                .panel.id = R.id.astrology_menu
+            iconColor = CelestialStylePreferences.get(this@MainActivity).chromeColor
         }
-        setContentView(drawerLayout)
+        setContentView(host)
         DailyWallpaperScheduler.configureForRequest(this)
-        drawerView.syncControls(
-            sundialView,
-            DailyWallpaperScheduler.isEnabled(this),
-            DailyWallpaperScheduler.usesLockScreen(this),
-        )
         sundialView.setZodiacProfile(zodiacProfile)
         ZodiacPreferences.getCurrentHoroscope(this, zodiacProfile, LocalDate.now())?.let {
             sundialView.setHoroscope(it)
-            drawerView.setHoroscopeStatus("Today's on-device horoscope is displayed on the instrument.")
+            astrologyPanel.setHoroscopeStatus("Today's on-device horoscope is displayed on the instrument.")
         }
         window.decorView.post { hideSystemBars() }
         ensureCalendarPermission()
     }
+
+    @Deprecated("Back is still delivered here for this targetSdk; it first tucks away an open menu.")
+    override fun onBackPressed() {
+        if (!host.close()) super.onBackPressed()
+    }
+
+    internal val tuckHostForTest: TuckMenuHost get() = host
 
     private fun hideSystemBars() {
         if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -173,14 +188,14 @@ class MainActivity : Activity() {
         if (requestCode == CALENDAR_PERMISSION && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             loadCalendars()
         } else if (requestCode == CALENDAR_PERMISSION) {
-            drawerView.setCalendarPermissionDenied()
+            calendarPanel.setPermissionDenied()
         }
     }
 
     private fun loadCalendars() {
         calendarExecutor.execute {
             val calendars = repository.loadCalendars()
-            runOnUiThread { drawerView.setCalendars(calendars) }
+            runOnUiThread { calendarPanel.setCalendars(calendars) }
         }
     }
 
@@ -196,104 +211,35 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun updateZodiacProfile(profile: ZodiacProfile) {
+    /**
+     * Saves the profile and, once astrology is on with a valid birth date and time, writes today's
+     * horoscope straight away. Typing settles for [horoscopeDelayMs] first so a half-edited date
+     * does not start a reading.
+     */
+    private fun updateZodiacProfile(profile: ZodiacProfile, horoscopeDelayMs: Long = 900L) {
         zodiacProfile = ZodiacPreferences.set(this, profile)
         sundialView.setZodiacProfile(zodiacProfile)
-        drawerView.setZodiacProfile(zodiacProfile)
-        drawerView.setHoroscopeStatus(
-            if (zodiacProfile.isComplete) "Birth details stay on this device. Generate a fresh daily reading."
-            else "Set birthday and birth time to enable the private on-device horoscope."
+        astrologyPanel.setZodiacProfile(zodiacProfile)
+        astrologyPanel.setHoroscopeStatus(
+            when {
+                !zodiacProfile.isComplete -> "Enter birth date and time for a private on-device horoscope."
+                !zodiacProfile.enabled -> "Turn on astrology mode to write today's horoscope."
+                else -> "Birth details stay on this device."
+            }
         )
         refreshWallpapers()
+        scheduleHoroscope(horoscopeDelayMs)
+    }
+
+    private fun scheduleHoroscope(delayMs: Long) {
+        handler.removeCallbacks(automaticHoroscope)
+        if (!zodiacProfile.enabled || !zodiacProfile.isComplete) return
+        if (ZodiacPreferences.getCurrentHoroscope(this, zodiacProfile, LocalDate.now()) != null) return
+        handler.postDelayed(automaticHoroscope, delayMs)
     }
 
     private fun refreshWallpapers() {
         if (DailyWallpaperScheduler.isEnabled(this)) DailyWallpaperScheduler.applyNow(this)
-    }
-
-    private fun showBirthDatePicker() {
-        val initial = zodiacProfile.birthDate ?: LocalDate.now().minusYears(30)
-        val instruction = TextView(this).apply {
-            text = "Type month, day, and a 4-digit year. Then tap Save Birth Date."
-            textSize = 15f
-            setTextColor(0xFF383838.toInt())
-            setPadding(0, 0, 0, dp(14))
-        }
-        fun dateField(value: Int, hintValue: String, digits: Int) = EditText(this).apply {
-            setText(value.toString().padStart(if (digits == 4) 4 else 2, '0'))
-            hint = hintValue
-            inputType = InputType.TYPE_CLASS_NUMBER
-            filters = arrayOf(InputFilter.LengthFilter(digits))
-            maxLines = 1
-            setSelectAllOnFocus(true)
-            textSize = 21f
-            gravity = Gravity.CENTER
-            contentDescription = when (hintValue) {
-                "MM" -> "Birth month"
-                "DD" -> "Birth day"
-                else -> "Four digit birth year"
-            }
-        }
-        val monthInput = dateField(initial.monthValue, "MM", 2)
-        val dayInput = dateField(initial.dayOfMonth, "DD", 2)
-        val yearInput = dateField(initial.year, "YYYY", 4)
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(monthInput, LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) })
-            addView(dayInput, LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) })
-            addView(yearInput, LinearLayout.LayoutParams(0, dp(58), 1.65f))
-        }
-        fun dateLabel(value: String) = TextView(this).apply {
-            text = value
-            textSize = 11f
-            setTextColor(0xFF676767.toInt())
-            gravity = Gravity.CENTER
-        }
-        val labels = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(dateLabel("MONTH"), LinearLayout.LayoutParams(0, dp(28), 1f).apply { marginEnd = dp(6) })
-            addView(dateLabel("DAY"), LinearLayout.LayoutParams(0, dp(28), 1f).apply { marginEnd = dp(6) })
-            addView(dateLabel("YEAR"), LinearLayout.LayoutParams(0, dp(28), 1.65f))
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(4), dp(24), 0)
-            addView(instruction)
-            addView(row)
-            addView(labels)
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Enter birth date")
-            .setView(content)
-            .setPositiveButton("SAVE BIRTH DATE", null)
-            .setNegativeButton("CANCEL", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.rgb(94, 55, 8))
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.rgb(68, 68, 68))
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                runCatching {
-                    BirthDateInput.parse(monthInput.text.toString(), dayInput.text.toString(), yearInput.text.toString())
-                }.onSuccess { date ->
-                    updateZodiacProfile(zodiacProfile.copy(birthDate = date, selectedSign = Zodiac.signFor(date)))
-                    dialog.dismiss()
-                }.onFailure { error ->
-                    instruction.text = error.message ?: "Enter a valid birth date"
-                    instruction.setTextColor(Color.rgb(176, 35, 35))
-                }
-            }
-            monthInput.requestFocus()
-        }
-        dialog.show()
-    }
-
-    private fun showBirthTimePicker() {
-        val initial = zodiacProfile.birthTime ?: LocalTime.NOON
-        TimePickerDialog(this, { _, hour, minute ->
-            updateZodiacProfile(zodiacProfile.copy(birthTime = LocalTime.of(hour, minute)))
-        }, initial.hour, initial.minute, false).apply { setTitle("Birth time") }.show()
     }
 
     private fun showZodiacSignPicker() {
@@ -303,17 +249,19 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Natal sun sign")
             .setSingleChoiceItems(labels, checked) { dialog, which ->
-                updateZodiacProfile(zodiacProfile.copy(selectedSign = if (which == 0) null else signs[which - 1]))
+                val sign = if (which == 0) zodiacProfile.birthDate?.let(Zodiac::signFor) else signs[which - 1]
+                updateZodiacProfile(zodiacProfile.copy(selectedSign = sign), horoscopeDelayMs = 0L)
                 dialog.dismiss()
             }
             .setNegativeButton("CANCEL", null)
             .show()
     }
 
-    private fun generateHoroscope() {
+    private fun generateHoroscope(automatic: Boolean) {
+        handler.removeCallbacks(automaticHoroscope)
         if (horoscopeGenerating) return
         if (!zodiacProfile.isComplete) {
-            Toast.makeText(this, "Set birthday and birth time first", Toast.LENGTH_SHORT).show()
+            if (!automatic) Toast.makeText(this, "Set birth date and birth time first", Toast.LENGTH_SHORT).show()
             return
         }
         val requestedProfile = zodiacProfile
@@ -321,27 +269,30 @@ class MainActivity : Activity() {
         uiScope.launch {
             runCatching {
                 horoscopeGenerator.generate(requestedProfile, Instant.now(), ZoneId.systemDefault()) { status ->
-                    drawerView.setHoroscopeStatus(status)
+                    astrologyPanel.setHoroscopeStatus(status)
                 }
             }.onSuccess { horoscope ->
                 val today = LocalDate.now()
                 ZodiacPreferences.setHoroscope(this@MainActivity, requestedProfile, today, horoscope)
-                sundialView.setHoroscope(horoscope)
-                drawerView.setHoroscopeStatus("Written privately by Gemini Nano · displayed on the instrument")
+                if (requestedProfile.signature == zodiacProfile.signature) sundialView.setHoroscope(horoscope)
+                astrologyPanel.setHoroscopeStatus("Written privately by Gemini Nano · displayed on the instrument")
                 refreshWallpapers()
-                drawerLayout.closeDrawer(GravityCompat.START)
             }.onFailure { error ->
                 val message = error.message ?: "On-device horoscope generation failed"
-                drawerView.setHoroscopeStatus(message)
-                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                astrologyPanel.setHoroscopeStatus(message)
+                if (!automatic) Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
             }
             horoscopeGenerating = false
+            // Birth details changed while the reading was being written: write the new one.
+            if (requestedProfile.signature != zodiacProfile.signature) scheduleHoroscope(0L)
         }
     }
 
     override fun onResume() {
         super.onResume()
         sundialView.resumeClock()
+        // A new day (or a first launch with astrology on) gets its reading without being asked.
+        scheduleHoroscope(0L)
     }
 
     override fun onPause() {
@@ -350,13 +301,12 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(automaticHoroscope)
         calendarExecutor.shutdownNow()
         uiScope.cancel()
         horoscopeGenerator.close()
         super.onDestroy()
     }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object { private const val CALENDAR_PERMISSION = 2401 }
 }

@@ -79,5 +79,6 @@ object Zodiac {
         Placement("MOON", "☾︎", Astronomy.moonLongitudeDegrees(instant), signForLongitude(Astronomy.moonLongitudeDegrees(instant))),
         Placement("MERCURY", "☿", geocentricLongitude(Astronomy.Body.MERCURY, instant), signForLongitude(geocentricLongitude(Astronomy.Body.MERCURY, instant))),
         Placement("VENUS", "♀", geocentricLongitude(Astronomy.Body.VENUS, instant), signForLongitude(geocentricLongitude(Astronomy.Body.VENUS, instant))),
+        Placement("MARS", "♂", geocentricLongitude(Astronomy.Body.MARS, instant), signForLongitude(geocentricLongitude(Astronomy.Body.MARS, instant))),
     )
 }

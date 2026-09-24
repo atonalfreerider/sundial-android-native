@@ -15,3 +15,14 @@ object BirthDateInput {
         return date
     }
 }
+
+/** Strict direct-entry parsing for a 12-hour birth time. */
+object BirthTimeInput {
+    fun parse(hour: String, minute: String, pm: Boolean): java.time.LocalTime {
+        val hourNumber = hour.trim().toIntOrNull() ?: throw IllegalArgumentException("Enter a numeric hour")
+        val minuteNumber = minute.trim().toIntOrNull() ?: throw IllegalArgumentException("Enter numeric minutes")
+        require(hourNumber in 1..12) { "Hour must be 1 to 12" }
+        require(minuteNumber in 0..59) { "Minutes must be 00 to 59" }
+        return java.time.LocalTime.of(hourNumber % 12 + if (pm) 12 else 0, minuteNumber)
+    }
+}

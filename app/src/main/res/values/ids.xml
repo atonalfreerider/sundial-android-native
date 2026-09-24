@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <item name="drawer_layout" type="id" />
     <item name="sundial_view" type="id" />
-    <item name="astral_drawer" type="id" />
+    <item name="tuck_host" type="id" />
+    <item name="settings_menu" type="id" />
+    <item name="calendar_menu" type="id" />
+    <item name="astrology_menu" type="id" />
 </resources>

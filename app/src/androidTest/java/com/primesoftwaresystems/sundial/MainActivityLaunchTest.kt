@@ -6,8 +6,6 @@ import android.graphics.Color
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 import com.primesoftwaresystems.sundial.ui.SundialView
 import com.primesoftwaresystems.sundial.ui.CelestialStyle
 import com.primesoftwaresystems.sundial.ui.CelestialStylePreferences
@@ -30,11 +28,18 @@ class MainActivityLaunchTest {
             scenario.onActivity { activity ->
                 assertFalse("MainActivity finished during launch", activity.isFinishing)
                 assertNotNull(activity.findViewById(R.id.sundial_view))
-                assertNotNull(activity.findViewById(R.id.astral_drawer))
-                val drawer = activity.findViewById<DrawerLayout>(R.id.drawer_layout)
-                drawer.openDrawer(GravityCompat.START, false)
-                assertTrue("Native settings drawer must open", drawer.isDrawerOpen(GravityCompat.START))
-                drawer.closeDrawer(GravityCompat.START, false)
+                val host = activity.tuckHostForTest
+                listOf(R.id.settings_menu, R.id.calendar_menu, R.id.astrology_menu).forEach { id ->
+                    val panel = activity.findViewById<android.view.View>(id)
+                    assertNotNull(panel)
+                    val button = (0 until host.childCount).map(host::getChildAt)
+                        .filterIsInstance<android.widget.ImageButton>()
+                        .single { (it.layoutParams as android.widget.FrameLayout.LayoutParams).gravity ==
+                            (panel.layoutParams as android.widget.FrameLayout.LayoutParams).gravity }
+                    button.performClick()
+                    assertTrue("Tuck menu must unfold", host.isMenuOpen && panel.visibility == android.view.View.VISIBLE)
+                    assertTrue("Tuck menu must tuck away", host.close())
+                }
             }
         }
     }

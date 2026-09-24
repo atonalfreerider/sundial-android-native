@@ -33,7 +33,16 @@ object DialGeometry {
 
     /** Matches Unity's portrait earthOrthoSize = solOrthoSize * .45 camera move. */
     const val EARTH_CAMERA_ZOOM = 1f / .45f
-    const val HELIOCENTRIC_EARTH_RADIUS = .025f
+
+    /**
+     * The solar view's Earth subdial is the Earth view drawn at this scale (deliberately enlarged, not
+     * to scale), so the camera flight starts from exactly what the subdial shows.
+     */
+    const val EARTH_SUBDIAL_SCALE = .115f
+    const val HELIOCENTRIC_EARTH_RADIUS = EARTH_RADIUS * EARTH_SUBDIAL_SCALE
+    const val SUBDIAL_GEAR = HOUR_DIAL * EARTH_SUBDIAL_SCALE
+    /** The enlarged lunar track, just outside the subdial's gear teeth. */
+    const val SUBDIAL_MOON_TRACK = .135f
 
     data class EventBand(val centerRadius: Float, val thickness: Float)
 
