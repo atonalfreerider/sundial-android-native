@@ -180,6 +180,8 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
         setTextColor(Color.WHITE)
         setHintTextColor(0x55FFFFFF)
         setSelectAllOnFocus(true)
+        // A few digits never need to scroll sideways, and centred text then draws without a scroll pass.
+        setHorizontallyScrolling(false)
         imeOptions = EditorInfo.IME_ACTION_NEXT
         background = GradientDrawable().apply {
             cornerRadius = controls.dp(12).toFloat()

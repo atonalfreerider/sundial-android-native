@@ -44,7 +44,7 @@ adb shell am instrument -w -e storeAssets true -e class com.metavirtuoso.sundial
 adb pull /sdcard/Android/data/com.metavirtuoso.sundial/files/store play/graphics
 ```
 
-This produces the 512 × 512 icon, 1024 × 500 feature graphics and 1080 × 1920 phone
+This produces the 512 × 512 icon, 1024 × 500 feature graphics and 1080 × 2160 phone
 screenshots. Listing text is in `play/listing/en-US/`.
 
 ## Each release

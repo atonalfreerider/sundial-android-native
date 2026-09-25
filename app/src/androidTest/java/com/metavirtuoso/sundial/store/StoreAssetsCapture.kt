@@ -125,8 +125,9 @@ class StoreAssetsCapture {
         astrology: Boolean,
         openMenu: Int? = null,
     ) {
+        // 2:1, the tallest phone screenshot Play accepts.
         val width = 1080
-        val height = 1920
+        val height = 2160
         val view = SundialView(context)
         view.setSelectedCalendarIds(setOf(1L, 2L))
         view.setCalendarOccurrences(events())

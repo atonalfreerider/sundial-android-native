@@ -45,7 +45,7 @@ The app requests read-only calendar permission. Google calendars already synchro
 - The corner buttons unfold tuck menus: **settings** (top left: clock, hemisphere, galactic view, aesthetic, wallpaper), **calendars** (bottom left) and **astrology** (bottom right). Tap outside, the button again, or Back to tuck a menu away.
 - The astrology menu holds every astrology input: astrology mode, birth date and time typed inline, and the sun sign. With astrology on and a valid birth date and time, today's private on-device horoscope is written automatically (again each new day, or when birth details change).
 - In the solar view the Earth carries its own subdial, like the silver gear on an astrological watch: a 24-hour sprocket ring with noon toward the Sun and an enlarged Moon on its lunar track. Astrology mode draws the planets as their classical symbols (☿ ♀ ⊕ ♂ and the lunar crescent).
-- **15-MIN CELESTIAL WALLPAPER** renders the live Earth-centered dial without app controls and refreshes it every 15 minutes. It targets the lock screen by default; disable **APPLY TO LOCK SCREEN** to use the home screen instead.
+- **15-MIN CELESTIAL WALLPAPER** (off until you turn it on) renders the live Earth-centered dial without app controls and refreshes it every 15 minutes. It targets the lock screen by default; disable **APPLY TO LOCK SCREEN** to use the home screen instead.
 - **AESTHETIC** offers Void Black, Crimson Nebula, Deep Space Blue, Cosmic Violet, Solar Bronze and Brass Watch, which engraves the instrument into a polished brass watch face in both astronomy and astrology modes. The chosen aesthetic is shared by the app and generated wallpaper.
 - Tap **RESET CURRENT TIME** after scrubbing.
 

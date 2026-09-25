@@ -50,15 +50,12 @@ object DailyWallpaperScheduler {
     private const val LOCK_PERIODIC_WORK = "daily_heliocentric_wallpaper_lock"
     private const val IMMEDIATE_WORK = "daily_heliocentric_wallpaper_now"
 
+    /**
+     * Keeps the celestial wallpaper scheduled once the person has turned it on. It is strictly
+     * opt-in: the app never touches the device wallpaper until that switch is on.
+     */
     fun configureForRequest(context: Context) {
-        val preferences = preferences(context)
-        if (!preferences.contains(ENABLED)) {
-            preferences.edit().putBoolean(ENABLED, true).apply()
-            schedule(context)
-            applyNow(context)
-        } else if (preferences.getBoolean(ENABLED, false)) {
-            schedule(context)
-        }
+        if (isEnabled(context)) schedule(context)
     }
 
     fun isEnabled(context: Context): Boolean = preferences(context).getBoolean(ENABLED, false)
