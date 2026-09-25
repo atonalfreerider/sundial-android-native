@@ -10,13 +10,15 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew test assembleDebug
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
+Play Store releases (signing, store assets, policy answers) are described in [play/RELEASE.md](play/RELEASE.md).
+
 ## Pixel/device verification
 
 The device-side integration test reads the actual Android calendar provider. With the Pixel attached and Google Calendar synced:
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell pm grant com.PrimeSoftwareSystems.Sundial android.permission.READ_CALENDAR
+adb shell pm grant com.metavirtuoso.sundial android.permission.READ_CALENDAR
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew connectedDebugAndroidTest
 ```
 

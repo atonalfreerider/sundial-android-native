@@ -1,0 +1,155 @@
+package com.metavirtuoso.sundial
+
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.metavirtuoso.sundial.ui.SundialView
+import com.metavirtuoso.sundial.ui.CelestialStyle
+import com.metavirtuoso.sundial.ui.CelestialStylePreferences
+import com.metavirtuoso.sundial.wallpaper.DailyWallpaperScheduler
+import com.metavirtuoso.sundial.ui.ZodiacProfile
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.time.Instant
+
+@RunWith(AndroidJUnit4::class)
+class MainActivityLaunchTest {
+    @Test fun activityLaunchesAndDrawsWithoutFinishing() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+            scenario.onActivity { activity ->
+                assertFalse("MainActivity finished during launch", activity.isFinishing)
+                assertNotNull(activity.findViewById(R.id.sundial_view))
+                val host = activity.tuckHostForTest
+                listOf(R.id.settings_menu, R.id.calendar_menu, R.id.astrology_menu).forEach { id ->
+                    val panel = activity.findViewById<android.view.View>(id)
+                    assertNotNull(panel)
+                    val button = (0 until host.childCount).map(host::getChildAt)
+                        .filterIsInstance<android.widget.ImageButton>()
+                        .single { (it.layoutParams as android.widget.FrameLayout.LayoutParams).gravity ==
+                            (panel.layoutParams as android.widget.FrameLayout.LayoutParams).gravity }
+                    button.performClick()
+                    assertTrue("Tuck menu must unfold", host.isMenuOpen && panel.visibility == android.view.View.VISIBLE)
+                    assertTrue("Tuck menu must tuck away", host.close())
+                }
+            }
+        }
+    }
+
+    @Test fun wallpaperFrameRendersHeliocentricViewWithoutApplicationChrome() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val originalStyle = CelestialStylePreferences.get(context)
+        CelestialStylePreferences.set(context, CelestialStyle.VOID_BLACK)
+        try {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val bitmap = SundialView(context).renderWallpaperBitmap(
+                    360,
+                    800,
+                    Instant.parse("2024-02-29T12:00:00Z"),
+                )
+                try {
+                    val corner = bitmap.getPixel(12, 12)
+                    assertTrue("Void background should remain dark without being flat black",
+                        Color.red(corner) + Color.green(corner) + Color.blue(corner) < 80)
+                    val sun = bitmap.getPixel(180, (800 * .47f).toInt())
+                    assertTrue("Wallpaper Sun should be luminous", Color.red(sun) > 160)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+        } finally {
+            CelestialStylePreferences.set(context, originalStyle)
+        }
+    }
+
+    @Test fun geocentricLockWallpaperUsesSharedCelestialBackground() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val originalStyle = CelestialStylePreferences.get(context)
+        val originalLockSetting = DailyWallpaperScheduler.usesLockScreen(context)
+        CelestialStylePreferences.set(context, CelestialStyle.CRIMSON_NEBULA)
+        DailyWallpaperScheduler.setUseLockScreen(context, true)
+        try {
+            assertTrue(DailyWallpaperScheduler.usesLockScreen(context))
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val bitmap = SundialView(context).renderWallpaperBitmap(
+                    360,
+                    800,
+                    Instant.parse("2026-09-22T19:30:00Z"),
+                    SundialView.ViewState.GEOCENTRIC,
+                )
+                try {
+                    val corner = bitmap.getPixel(12, 12)
+                    assertTrue("Crimson background must carry into wallpaper", Color.red(corner) > Color.blue(corner))
+                    val earth = bitmap.getPixel(180, (800 * .47f).toInt())
+                    assertTrue("Earth-centered wallpaper must render a visible globe", Color.red(earth) + Color.green(earth) + Color.blue(earth) > 55)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+        } finally {
+            CelestialStylePreferences.set(context, originalStyle)
+            DailyWallpaperScheduler.setUseLockScreen(context, originalLockSetting)
+        }
+    }
+
+    @Test fun earthRemainsVisibleAcrossRepeatedGeocentricFramesAndReset() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val view = SundialView(context)
+            val start = Instant.parse("2026-09-22T00:00:00Z")
+            repeat(10) { index ->
+                val bitmap = view.renderWallpaperBitmap(
+                    360, 800, start.plusSeconds(index * 7_200L), SundialView.ViewState.GEOCENTRIC,
+                )
+                try {
+                    val center = bitmap.getPixel(180, (800 * .47f).toInt())
+                    assertTrue("Earth frame $index disappeared",
+                        Color.red(center) + Color.green(center) + Color.blue(center) > 35)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            view.resetNow()
+            val resetFrame = Bitmap.createBitmap(360, 800, Bitmap.Config.ARGB_8888)
+            try {
+                view.draw(android.graphics.Canvas(resetFrame))
+                val center = resetFrame.getPixel(180, (800 * .47f).toInt())
+                assertTrue("Earth disappeared after reset",
+                    Color.red(center) + Color.green(center) + Color.blue(center) > 35)
+            } finally {
+                resetFrame.recycle()
+            }
+        }
+    }
+
+    @Test fun horoscopePrintsOnHomeAndLockWallpapersOnlyInAstrologyMode() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val instant = Instant.parse("2026-09-22T19:30:00Z")
+            fun renderedTopPixel(enabled: Boolean, state: SundialView.ViewState): Int {
+                val view = SundialView(context)
+                view.setAstrologyContentForTest(
+                    ZodiacProfile(enabled = enabled),
+                    "A deliberate test horoscope carried across the celestial wallpaper.",
+                )
+                val bitmap = view.renderWallpaperBitmap(1_080, 2_424, instant, state)
+                return try { bitmap.getPixel(540, 300) } finally { bitmap.recycle() }
+            }
+
+            val astronomy = renderedTopPixel(false, SundialView.ViewState.HELIOCENTRIC)
+            val astrologyHome = renderedTopPixel(true, SundialView.ViewState.HELIOCENTRIC)
+            val astrologyLock = renderedTopPixel(true, SundialView.ViewState.GEOCENTRIC)
+
+            assertNotEquals("Astronomy wallpaper must not print astrology content", astronomy, astrologyHome)
+            assertNotEquals("Lock wallpaper must print the horoscope panel", astronomy, astrologyLock)
+        }
+    }
+}

@@ -23,8 +23,8 @@ Run the complete device suite:
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell pm grant com.PrimeSoftwareSystems.Sundial android.permission.READ_CALENDAR
+adb shell pm grant com.metavirtuoso.sundial android.permission.READ_CALENDAR
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r \
-  com.PrimeSoftwareSystems.Sundial.test/androidx.test.runner.AndroidJUnitRunner
+  com.metavirtuoso.sundial.test/androidx.test.runner.AndroidJUnitRunner
 ```

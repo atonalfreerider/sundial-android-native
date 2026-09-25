@@ -8,3 +8,5 @@
 *.keystore
 captures/
 /pixel10-*.png
+keystore.properties
+play-service-account*.json
