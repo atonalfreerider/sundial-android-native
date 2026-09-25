@@ -15,12 +15,12 @@ val reportFields = providers.gradleProperty("sundial.reportFields").getOrElse(""
 
 android {
     namespace = "com.metavirtuoso.sundial"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.metavirtuoso.sundial"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 14
         versionName = "3.0.0"
         buildConfigField("String", "REPORT_ENDPOINT", "\"$reportEndpoint\"")

@@ -1,6 +1,7 @@
 package com.metavirtuoso.sundial
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.PackageManager
@@ -174,6 +175,8 @@ class MainActivity : Activity() {
         }
     }
 
+    // Android 13+ Back goes through tuckBackCallback; this platform Activity has no other hook below 13.
+    @SuppressLint("GestureBackNavigation")
     @Deprecated("Only reached below Android 13; newer versions use OnBackInvokedCallback.")
     override fun onBackPressed() {
         if (!host.close()) super.onBackPressed()
