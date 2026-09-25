@@ -10,8 +10,8 @@ calendar read, wallpaper, and the in-app reading report). Review before submitti
 
 **Is all of the user data collected by your app encrypted in transit?** Yes (HTTPS).
 
-**Do you provide a way for users to request that their data be deleted?** Yes — by email to the
-contact address (reports). On-device data is deleted by clearing storage or uninstalling.
+**Do you provide a way for users to request that their data be deleted?** Yes — by email to
+themetavirtuoso@gmail.com (reports). On-device data is deleted by clearing storage or uninstalling.
 
 | Data type | Collected | Shared | Processed ephemerally | Required / optional | Purposes |
 |---|---|---|---|---|---|
@@ -34,7 +34,7 @@ time, horoscope text (unless the person reports it), location, contacts, persona
 
 ## App content declarations
 
-- **Privacy policy URL:** where play/privacy-policy.md is hosted on the Metavirtuoso site.
+- **Privacy policy URL:** https://primitive.io/legal/sundial-privacy/
 - **Ads:** the app contains no ads.
 - **App access:** all functionality is available without special access or login.
 - **Target audience:** 13 and over (not designed for children; astrology uses generative AI).

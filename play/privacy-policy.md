@@ -1,7 +1,10 @@
 # Sundial Privacy Policy
 
-**Effective date:** CONTACT_EFFECTIVE_DATE
-**Developer:** Metavirtuoso — contact: CONTACT_EMAIL
+Published at https://primitive.io/legal/sundial-privacy/ (keep that page in step with this file).
+
+**Effective date:** September 25, 2026
+**Developer:** Metavirtuoso — themetavirtuoso@gmail.com
+**Android package:** `com.metavirtuoso.sundial`
 
 Sundial ("the app") is a celestial clock for Android. It has no accounts and no advertising, and it is designed so that your personal information stays on your device. This policy explains what the app accesses, what leaves your device, and your choices.
 
@@ -13,13 +16,13 @@ Sundial ("the app") is a celestial clock for Android. It has no accounts and no 
 
 **Horoscopes.** Daily horoscopes are generated on your device by Gemini Nano through Android's AICore system service, where your device supports it. Your birth details and the reading are processed on the device and are not sent to us.
 
-**Settings and wallpaper.** Display preferences, and the optional celestial wallpaper, are created and stored on your device.
+**Settings and wallpaper.** Display preferences, and the optional celestial wallpaper (off until you turn it on), are created and stored on your device.
 
 Android may include the app's private settings, including birth details, in your device's own encrypted backup to your Google account if you have device backup turned on. We have no access to those backups.
 
 ## Information that leaves your device
 
-**Reports you choose to send.** You can report any AI-written reading from inside the app. When you do, the app sends us the text of that reading, the reason you selected, the date and the app version, so that we can review it and improve content safeguards. Reports contain no birth details, calendar data or account identifiers. We keep reports only as long as needed for that review.
+**Reports you choose to send.** You can report any AI-written reading from inside the app. When you do, the app sends us the text of that reading, the reason you selected, the date and the app version, so that we can review it and improve content safeguards. Reports are submitted through Google Forms and contain no birth details, calendar data or account identifiers. We keep reports only as long as needed for that review.
 
 **Diagnostics collected by Google ML Kit.** The on-device horoscope feature uses Google's ML Kit GenAI library. ML Kit sends Google limited diagnostic and usage information — such as device model and Android version, app package name and version, performance metrics, error codes, configured languages and an identifier used for diagnostics — to operate and improve the service. It does not include your calendar data, birth details or horoscope text. See Google's ML Kit data disclosure: https://developers.google.com/ml-kit/android-data-disclosure
 
@@ -36,7 +39,7 @@ We do not sell your information, and we do not use it for advertising.
 
 - You can revoke calendar permission at any time in Android settings; the app keeps working without it.
 - Astrology mode is off by default. Turning it off stops horoscope generation; clearing the app's storage or uninstalling it deletes your birth details.
-- To ask about or request deletion of a report you sent, contact us at CONTACT_EMAIL.
+- To ask about or request deletion of a report you sent, contact us at themetavirtuoso@gmail.com.
 
 ## Children
 
@@ -48,4 +51,4 @@ We will post any changes to this policy on this page and update the effective da
 
 ## Contact
 
-Metavirtuoso — CONTACT_EMAIL
+Metavirtuoso — themetavirtuoso@gmail.com

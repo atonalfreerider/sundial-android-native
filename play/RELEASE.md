@@ -25,12 +25,12 @@ Developer account: https://play.google.com/console/u/0/developers/78588590679112
 
    Enrol in Play App Signing when creating the release: Google holds the app signing key and
    this key only uploads.
-3. **Reading reports.** Play's AI-generated content policy requires in-app reporting. Point
-   `sundial.reportEndpoint` in `gradle.properties` at where reports should go (a Google Form's
-   `formResponse` URL works) and map `sundial.reportFields` to its field names. The Play bundle
-   will not build until this is set.
-4. **Privacy policy.** Fill in the contact email and date in `play/privacy-policy.md` and host
-   it on the Metavirtuoso site; its URL goes into the Console.
+3. **Reading reports.** Play's AI-generated content policy requires in-app reporting. Reports
+   go to the "Sundial App Reading Reports" Google Form (`sundial.reportEndpoint` and
+   `sundial.reportFields` in `gradle.properties`). The Play bundle will not build without them.
+4. **Privacy policy.** Published at https://primitive.io/legal/sundial-privacy/ from the
+   Primitive landing site (`PRIMITIVE/landing/src/legal/sundial-privacy.md`); keep it in step
+   with `play/privacy-policy.md`. Contact: themetavirtuoso@gmail.com.
 
 ## Store assets
 

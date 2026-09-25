@@ -39,6 +39,11 @@ class SettingsPanel(context: Context) : LinearLayout(context) {
         addView(wallpaperSwitch)
         addView(lockWallpaperSwitch)
         addView(controls.section("APPLICATION"))
+        addView(controls.action("PRIVACY POLICY", "Open Sundial's privacy policy") {
+            runCatching {
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(PRIVACY_POLICY_URL)))
+            }
+        })
         addView(controls.action("QUIT", "Close Sundial") { onQuit?.invoke() })
 
         clockSwitch.setOnCheckedChangeListener { _, checked -> if (!syncing) onClockChanged?.invoke(checked) }
@@ -67,5 +72,9 @@ class SettingsPanel(context: Context) : LinearLayout(context) {
                 "Use ${style.displayName} in Sundial and wallpaper",
             ) { onBackgroundStyleChanged?.invoke(style) })
         }
+    }
+
+    private companion object {
+        const val PRIVACY_POLICY_URL = "https://primitive.io/legal/sundial-privacy/"
     }
 }
