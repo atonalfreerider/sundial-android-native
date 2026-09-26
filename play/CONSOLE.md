@@ -67,6 +67,15 @@ Test and release → Testing → **Internal testing**
 7. Open the tester opt-in link on the phone, uninstall any locally installed
    `com.metavirtuoso.sundial` build first (Play re-signs the app), then install from Play.
 
+## 4b. Wear OS
+
+1. Test and release → **Advanced settings → Form factors** → add **Wear OS** and accept the Wear OS
+   requirements.
+2. Store presence → Main store listing → **Wear OS screenshots**: `graphics/wear-1-…` to
+   `graphics/wear-5-…` (1:1, 454 × 454).
+3. Testing → **Internal testing** (Wear OS track) → create a release with
+   `sundial-wear-3.0.0-1000014.aab`. Wear OS releases go through an extra Wear quality review.
+
 ## 5. Production
 
 **Personal** developer accounts created after 13 November 2023 must first run a closed test

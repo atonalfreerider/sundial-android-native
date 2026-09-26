@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "SundialNative"
-include(":app")
+include(":app", ":core", ":wear")

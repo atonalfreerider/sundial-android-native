@@ -20,7 +20,7 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.view.MotionEvent
 import android.view.View
-import com.metavirtuoso.sundial.R
+import com.metavirtuoso.sundial.core.R
 import com.metavirtuoso.sundial.astronomy.Astronomy
 import com.metavirtuoso.sundial.astronomy.Zodiac
 import com.metavirtuoso.sundial.calendar.CalendarOccurrence
@@ -43,7 +43,11 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-class SundialView(context: Context) : View(context) {
+/** The Sundial instrument. [layout] fits it to a phone or to a round or rectangular watch. */
+class SundialView(
+    context: Context,
+    private val layout: InstrumentLayout = InstrumentLayout.PHONE,
+) : View(context) {
     enum class ViewState { HELIOCENTRIC, GEOCENTRIC, GALACTIC }
 
     // Named apart from TextPaint.density (always 1), which shadows it inside TextPaint.apply blocks.
@@ -71,8 +75,11 @@ class SundialView(context: Context) : View(context) {
     private val atmosphere = Paint()
     private var atmosphereKey: Triple<Int, Int, CelestialStyle>? = null
     private val galacticMatrix = Matrix()
-    private val earthTexture = BitmapFactory.decodeResource(resources, R.drawable.earth_texture)
-    private val earthRenderer = EarthSphereRenderer(earthTexture)
+    // A watch globe is small: a half-resolution texture and a smaller render keep memory and CPU down.
+    private val earthTexture = BitmapFactory.decodeResource(resources, R.drawable.earth_texture,
+        BitmapFactory.Options().apply { if (layout.isWatch) inSampleSize = 2 })
+    private val earthRenderer = EarthSphereRenderer(earthTexture,
+        if (layout.isWatch) 320 else EarthSphereRenderer.DEFAULT_SIZE)
     private val earthGlobeBounds = RectF()
     private val earthBitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val moonRenderer = MoonSphereRenderer()
@@ -164,10 +171,10 @@ class SundialView(context: Context) : View(context) {
     val isClockVisible: Boolean get() = showClock
     val isGalacticVisible: Boolean get() = state == ViewState.GALACTIC
     val isSouthernHemisphere: Boolean get() = !north
-    internal val selectedInstantForTest: Instant get() = selectedInstant
-    internal val earthPointForTest: Pair<Float, Float> get() = earthPoint
-    internal val sunPointForTest: Pair<Float, Float> get() = sunPoint
-    internal val inspectedEventTitleForTest: String? get() = inspectedEvent?.title
+    val selectedInstantForTest: Instant get() = selectedInstant
+    val earthPointForTest: Pair<Float, Float> get() = earthPoint
+    val sunPointForTest: Pair<Float, Float> get() = sunPoint
+    val inspectedEventTitleForTest: String? get() = inspectedEvent?.title
     /** True while drawing on the dial face: Brass Watch engraves it in dark ink, everything else is light. */
     private var onFace = true
     private val instrumentColor: Int
@@ -202,7 +209,7 @@ class SundialView(context: Context) : View(context) {
         invalidate()
     }
     /** Freezes the instrument in one moment, style and view for screenshots; nothing is saved. */
-    internal fun freezeForCapture(instant: Instant, captureState: ViewState, style: CelestialStyle) {
+    fun freezeForCapture(instant: Instant, captureState: ViewState, style: CelestialStyle) {
         pauseClock()
         backgroundStyle = style
         state = captureState
@@ -217,7 +224,7 @@ class SundialView(context: Context) : View(context) {
         invalidate()
     }
     fun setHoroscope(value: String?) { horoscopeText = value?.trim()?.takeIf { it.isNotBlank() }; invalidate() }
-    internal fun setAstrologyContentForTest(profile: ZodiacProfile, horoscope: String?) {
+    fun setAstrologyContentForTest(profile: ZodiacProfile, horoscope: String?) {
         zodiacProfile = profile
         horoscopeText = horoscope
     }
@@ -226,9 +233,49 @@ class SundialView(context: Context) : View(context) {
         selectedCalendarIds.clear(); selectedCalendarIds.addAll(ids); invalidate()
     }
 
+    private var ambient = false
+    private val ambientPaint = Paint().apply {
+        colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
+            setSaturation(0f)
+            postConcat(android.graphics.ColorMatrix().apply { setScale(.55f, .55f, .55f, 1f) })
+        })
+    }
+
+    /**
+     * Always-on display on a watch: the same instrument, grey and dim on black, without the sky or
+     * the brass face, redrawn only when the host asks (once a minute).
+     */
+    fun setAmbient(value: Boolean, burnInProtection: Boolean = false) {
+        ambientBurnIn = burnInProtection
+        if (ambient == value) return
+        ambient = value
+        transitionFrom = null
+        invalidate()
+    }
+
+    private var ambientBurnIn = false
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         useInk(face = false)
+        if (ambient) {
+            if (realtime) selectedInstant = Instant.now()
+            canvas.drawColor(Color.BLACK)
+            canvas.save()
+            if (ambientBurnIn) {
+                // Wander a few pixels each minute so no OLED pixel stays lit in one place.
+                val minute = selectedInstant.epochSecond / 60
+                canvas.translate(((minute % 5) - 2) * 2f * density, (((minute / 5) % 5) - 2) * 2f * density)
+            }
+            val layer = canvas.saveLayer(null, ambientPaint)
+            drawState(canvas, state)
+            useInk(face = false)
+            drawChrome(canvas)
+            canvas.restoreToCount(layer)
+            drawAmbientTime(canvas)
+            canvas.restore()
+            return
+        }
         // Freeze astronomy while a camera flight is active so both views target the same Earth.
         if (running && realtime && transitionFrom == null) selectedInstant = Instant.now()
         if (displayedYear != lastReportedCalendarYear && selectedCalendarIds.isNotEmpty()) {
@@ -251,7 +298,7 @@ class SundialView(context: Context) : View(context) {
         }
         useInk(face = false)
         if (wallpaperMode) {
-            if (zodiacProfile.enabled) horoscopeText?.let { drawHoroscopeCard(canvas, it, forWallpaper = true) }
+            if (zodiacProfile.enabled && !layout.isWatch) horoscopeText?.let { drawHoroscopeCard(canvas, it, forWallpaper = true) }
         } else {
             drawChrome(canvas)
             inspectedEvent?.let { drawEventInspectionOverlay(canvas, it) }
@@ -537,12 +584,29 @@ class SundialView(context: Context) : View(context) {
         }
     }
 
-    private fun geometry(): Triple<Float, Float, Float> {
-        val cx = width / 2f
-        val cy = height * if (height > width * 1.25f) 0.47f else 0.5f
-        val radius = min(width * 0.47f, height * 0.41f)
-        return Triple(cx, cy, radius)
+    private fun geometry(): Triple<Float, Float, Float> = when (layout) {
+        InstrumentLayout.PHONE -> Triple(
+            width / 2f,
+            height * if (height > width * 1.25f) 0.47f else 0.5f,
+            min(width * 0.47f, height * 0.41f),
+        )
+        // The annual dial and its season band fill a round watch; the Earth view's Sun sits on the rim.
+        InstrumentLayout.WATCH_ROUND -> Triple(width / 2f, height / 2f, min(width, height) * .43f)
+        // A rectangular watch keeps a strip below the dial for the time.
+        InstrumentLayout.WATCH_RECT -> Triple(
+            width / 2f,
+            height * if (height > width * 1.08f) .45f else .5f,
+            min(width * .43f, height * .40f),
+        )
     }
+
+    /** On a watch the instrument is small, so labels keep a readable minimum size. */
+    private fun label(scaled: Float, watchMinimumDp: Float): Float =
+        if (layout.isWatch) maxOf(scaled, watchMinimumDp * density) else scaled
+
+    /** Touch targets on a watch are at least a fingertip wide. */
+    private fun reach(scaled: Float, watchMinimumDp: Float): Float =
+        if (layout.isWatch) maxOf(scaled, watchMinimumDp * density) else scaled
 
     private fun drawHeliocentric(canvas: Canvas) {
         val (cx, cy, r) = geometry()
@@ -570,6 +634,17 @@ class SundialView(context: Context) : View(context) {
         drawOrbitPaths(canvas, cx, cy, r)
         drawCalendarYearEvents(canvas, cx, cy, r)
         if (includeSun) drawSun(canvas, cx, cy, r * 0.052f)
+        if (layout.isWatch && showClock) {
+            // In ambient the time is drawn above the dimmed instrument instead (drawAmbientTime).
+            if (ambient) return
+            val time = Paint(text).apply {
+                textSize = r * .17f
+                setShadowLayer(4f * density, 0f, 0f, if (brass && onFace) 0x80FFF3D0.toInt() else Color.BLACK)
+            }
+            canvas.drawText(selectedInstant.atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm")),
+                cx, cy - r * .5f, time)
+            return
+        }
         text.textSize = r * 0.086f
         canvas.drawText("S U N : D I A L", cx, cy - r * 0.56f, text)
     }
@@ -625,6 +700,7 @@ class SundialView(context: Context) : View(context) {
     }
 
     private fun drawSeasonShading(canvas: Canvas, cx: Float, cy: Float, r: Float) {
+        if (ambient) return
         updateSeasonShaders(cx, cy)
         seasonWashPaint.shader = seasonWash
         canvas.drawCircle(cx, cy, r * .965f, seasonWashPaint)
@@ -690,7 +766,7 @@ class SundialView(context: Context) : View(context) {
 
             val mid = zodiacAngle(sign.ordinal * 30.0 + 15.0)
             val glyphPoint = point(cx, cy, r * .797f, mid)
-            glyphPaint.textSize = r * if (sign == activeSign || sign == natalSign) .078f else .061f
+            glyphPaint.textSize = label(r * if (sign == activeSign || sign == natalSign) .078f else .061f, 8f)
             glyphPaint.color = when {
                 sign == natalSign -> if (brass) BRASS_ENAMEL_RED else 0xFFFFD889.toInt()
                 sign == activeSign -> instrumentColor
@@ -698,6 +774,8 @@ class SundialView(context: Context) : View(context) {
             }
             canvas.drawText(sign.symbol, glyphPoint.first,
                 glyphPoint.second - (glyphPaint.ascent() + glyphPaint.descent()) / 2f, glyphPaint)
+            // Too small to read on a watch; the glyphs carry the ring there.
+            if (layout.isWatch) return@forEach
             val signPaint = Paint(dimText).apply {
                 textSize = r * .020f
                 color = withAlpha(instrumentColor, if (sign == activeSign) 225 else 105)
@@ -812,7 +890,7 @@ class SundialView(context: Context) : View(context) {
             white.strokeWidth = if (monthStart) r * .003f else r * .0017f
             drawRadialLine(canvas, cx, cy, r - length, r * .995f, angle, white)
         }
-        text.textSize = r * 0.039f
+        text.textSize = label(r * 0.039f, 8f)
         for (month in 1..12) {
             val date = LocalDate.of(year, month, 15)
             val fraction = (date.dayOfYear - 0.5) / days
@@ -853,7 +931,8 @@ class SundialView(context: Context) : View(context) {
      * bezel. It is drawn in the Sun's frame, so the Earth camera flies across the same face.
      */
     private fun drawDialFace(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        if (!brass) return
+        // A lit brass disc would defeat an always-on display's black background.
+        if (!brass || ambient) return
         val key = FaceKey(cx, cy, r)
         if (key != faceKey) {
             faceKey = key
@@ -1160,7 +1239,7 @@ class SundialView(context: Context) : View(context) {
         }
 
         drawHourSprocket(canvas, cx, cy, hourR, r)
-        text.textSize = r * .038f
+        text.textSize = label(r * .038f, 7.5f)
         for (hour in 0 until 24) {
             drawRotatedText(canvas, hour.toString(), cx, cy, hourR * .87f, hourAngle(hour.toDouble()), text, true)
         }
@@ -1230,8 +1309,8 @@ class SundialView(context: Context) : View(context) {
         canvas.drawArc(RectF(cx - moonR, cy - moonR, cx + moonR, cy + moonR),
             angles.first().toFloat(), (direction * span).toFloat(), false, white)
 
-        val monthPaint = Paint(text).apply { textSize = r * .033f }
-        text.textSize = r * .037f
+        val monthPaint = Paint(text).apply { textSize = label(r * .033f, 6.5f) }
+        text.textSize = label(r * .037f, 7f)
         for (i in 0..29) {
             val date = today.plusDays(i.toLong())
             val monthStart = date.dayOfMonth == 1 && i > 0
@@ -1321,8 +1400,9 @@ class SundialView(context: Context) : View(context) {
             textSize = maxOf(r * .03f, 9f * density)
             color = withAlpha(instrumentColor, 220)
         }
-        // Unity sets each weekday 4.2° either side of the boundary it names.
-        val split = 4.2 / 15.0
+        // Unity sets each weekday 4.2° either side of the boundary it names; small dials (a watch)
+        // need a wider split so the two names don't run together.
+        val split = maxOf(4.2, Math.toDegrees(((dayPaint.measureText("WED") / 2f + 2f * density) / stripR).toDouble())) / 15.0
         listOf(0.0 to true, datelineHours to false).forEach { (boundary, newDayAfter) ->
             drawRotatedText(canvas, if (newDayAfter) newDay else oldDay, cx, cy, stripR,
                 hourAngle(boundary + split), dayPaint, true)
@@ -1647,7 +1727,7 @@ class SundialView(context: Context) : View(context) {
     private fun dayBand(hourR: Float, calendarId: Long): DialGeometry.EventBand =
         DialGeometry.dayEventBand(hourR, calendarIndex(calendarId), minThickness = dayEventLabelSize(hourR) * 1.3f)
 
-    internal fun yearEventBandForTest(calendarId: Long): DialGeometry.EventBand = yearBand(geometry().third, calendarId)
+    fun yearEventBandForTest(calendarId: Long): DialGeometry.EventBand = yearBand(geometry().third, calendarId)
 
     private fun drawCalendarYearEvents(canvas: Canvas, cx: Float, cy: Float, r: Float) {
         val year = displayedYear
@@ -1916,6 +1996,10 @@ class SundialView(context: Context) : View(context) {
 
     private fun drawChrome(canvas: Canvas) {
         horoscopeCards.clear()
+        if (layout.isWatch) {
+            drawWatchChrome(canvas)
+            return
+        }
         // In the Earth view the brass face fills the top of the screen, so text there is engraved.
         useInk(face = brass && state == ViewState.GEOCENTRIC && transitionFrom == null)
         if (showClock) {
@@ -1935,6 +2019,58 @@ class SundialView(context: Context) : View(context) {
         if (state == ViewState.GEOCENTRIC && transitionFrom == null) drawSelectedZoneCaption(canvas)
         useInk(face = false)
         if (zodiacProfile.enabled) horoscopeText?.let { drawHoroscopeCard(canvas, it, forWallpaper = false) }
+    }
+
+    /**
+     * A watch shows the time and, after scrubbing, a small NOW pill. There is no room for readings,
+     * captions or event cards; the Sun view's title already shows the time when the clock is on.
+     */
+    private fun drawWatchChrome(canvas: Canvas) {
+        val (cx, cy, r) = geometry()
+        // The Sun view's title carries the time; a round Earth view has no free edge for it, and its
+        // hour dial already shows the time. A rectangular face uses the strip below the dial.
+        if (showClock && state != ViewState.HELIOCENTRIC && layout == InstrumentLayout.WATCH_RECT) {
+            val time = Paint(text).apply {
+                textSize = 15f * density
+                color = backgroundStyle.chromeColor
+                setShadowLayer(3f * density, 0f, 0f, Color.BLACK)
+            }
+            val y = (cy + r * 1.1f + height) / 2f - (time.ascent() + time.descent()) / 2f
+            // The NOW pill takes the middle of the strip once time has been scrubbed.
+            val x = if (realtime) cx else width * .17f
+            canvas.drawText(selectedInstant.atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm")), x, y, time)
+        }
+        if (!realtime) {
+            val rect = watchNowPill()
+            fill.color = Color.argb(225, 15, 15, 15)
+            canvas.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, fill)
+            white.color = backgroundStyle.chromeColor; white.strokeWidth = density
+            canvas.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, white)
+            val now = Paint(text).apply { textSize = 12f * density; color = backgroundStyle.chromeColor; letterSpacing = .12f }
+            canvas.drawText("NOW", rect.centerX(), rect.centerY() - (now.ascent() + now.descent()) / 2f, now)
+        }
+    }
+
+    /** The time stays the brightest thing on an always-on watch face: plain grey, no halo. */
+    private fun drawAmbientTime(canvas: Canvas) {
+        if (!layout.isWatch || !showClock) return
+        val (cx, cy, r) = geometry()
+        val time = Paint(text).apply { color = 0xFFC8C8C8.toInt() }
+        val y = when {
+            state == ViewState.HELIOCENTRIC -> { time.textSize = r * .17f; cy - r * .5f }
+            layout == InstrumentLayout.WATCH_RECT -> {
+                time.textSize = 15f * density
+                (cy + r * 1.1f + height) / 2f - (time.ascent() + time.descent()) / 2f
+            }
+            else -> return
+        }
+        canvas.drawText(selectedInstant.atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm")), cx, y, time)
+    }
+
+    /** Sits inside the bottom of a round face, where the circle is still wide enough for it. */
+    private fun watchNowPill(): RectF {
+        val bottom = height - 14f * density
+        return RectF(width * .34f, bottom - 26f * density, width * .66f, bottom)
     }
 
     private fun drawHoroscopeCard(canvas: Canvas, value: String, forWallpaper: Boolean) {
@@ -2250,31 +2386,40 @@ class SundialView(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (transitionFrom != null) return true
-                if (!realtime && event.y > height - 75f * density && event.x in width * .2f..width * .8f) {
+                val nowTapped = if (layout.isWatch) watchNowPill().apply { inset(-8f * density, -8f * density) }.contains(event.x, event.y)
+                    else event.y > height - 75f * density && event.x in width * .2f..width * .8f
+                if (!realtime && nowTapped) {
                     resetNow(); return true
                 }
+                longPressFired = false
+                longPressX = event.x
+                longPressY = event.y
                 if (horoscopeCards.any { it.contains(event.x, event.y) }) {
                     onHoroscopeTapped?.invoke(); return true
                 }
                 if (beginEventInspection(event.x, event.y)) return true
                 val radiusFromCenter = distance(event.x, event.y, cx, cy)
-                if (state == ViewState.HELIOCENTRIC && distance(event.x, event.y, earthPoint.first, earthPoint.second) < r * .09f) {
+                if (state == ViewState.HELIOCENTRIC &&
+                    distance(event.x, event.y, earthPoint.first, earthPoint.second) < reach(r * .09f, 22f)) {
                     dragMode = DragMode.YEAR
                     dragStartX = event.x
                     dragStartY = event.y
                     dragStarted = false
                     parent?.requestDisallowInterceptTouchEvent(true)
+                    armLongPress()
                     return true
                 }
-                if (state == ViewState.HELIOCENTRIC && radiusFromCenter < r * .13f) {
+                if (state == ViewState.HELIOCENTRIC && radiusFromCenter < reach(r * .13f, 26f)) {
                     switchToState(ViewState.GEOCENTRIC); return true
                 }
-                if (state == ViewState.GEOCENTRIC && distance(event.x, event.y, moonPoint.first, moonPoint.second) < r * .09f) {
+                if (state == ViewState.GEOCENTRIC &&
+                    distance(event.x, event.y, moonPoint.first, moonPoint.second) < reach(r * .09f, 22f)) {
                     dragMode = DragMode.MOON
                     dragStartX = event.x
                     dragStartY = event.y
                     dragStarted = false
                     parent?.requestDisallowInterceptTouchEvent(true)
+                    armLongPress()
                     return true
                 }
                 if (state == ViewState.GALACTIC) {
@@ -2285,6 +2430,7 @@ class SundialView(context: Context) : View(context) {
                     dragStartYear = GalacticGeometry.continuousYear(selectedInstant, zone)
                     dragStarted = false
                     parent?.requestDisallowInterceptTouchEvent(true)
+                    armLongPress()
                     return true
                 }
                 if (state == ViewState.GEOCENTRIC && radiusFromCenter in r * .53f..r * .75f) {
@@ -2299,8 +2445,11 @@ class SundialView(context: Context) : View(context) {
                 if (state == ViewState.GEOCENTRIC && radiusFromCenter < r * .48f) {
                     switchToState(ViewState.HELIOCENTRIC); return true
                 }
+                // Nothing under the finger: a long press here opens the host's settings.
+                armLongPress()
             }
             MotionEvent.ACTION_MOVE -> {
+                if (distance(event.x, event.y, longPressX, longPressY) >= 8f * density) removeCallbacks(longPress)
                 when (dragMode) {
                     DragMode.YEAR -> {
                         if (dragStarted || distance(event.x, event.y, dragStartX, dragStartY) >= 8f * density) {
@@ -2328,14 +2477,54 @@ class SundialView(context: Context) : View(context) {
                 }
             }
             MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
+                if (longPressFired) return true
                 val galacticTap = dragMode == DragMode.GALAXY && !dragStarted
                 finishInteraction()
                 if (galacticTap) switchToState(ViewState.HELIOCENTRIC)
                 performClick()
             }
-            MotionEvent.ACTION_CANCEL -> finishInteraction()
+            MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(longPress)
+                finishInteraction()
+            }
         }
         return true
+    }
+
+    /** Set by a host that opens settings on a long press (the watch app). */
+    var onLongPress: (() -> Unit)? = null
+    private var longPressFired = false
+    private var longPressX = 0f
+    private var longPressY = 0f
+    private val longPress = Runnable {
+        if (dragStarted) return@Runnable
+        longPressFired = true
+        finishInteraction()
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        onLongPress?.invoke()
+    }
+
+    private fun armLongPress() {
+        if (onLongPress == null) return
+        removeCallbacks(longPress)
+        postDelayed(longPress, android.view.ViewConfiguration.getLongPressTimeout().toLong())
+    }
+
+    /**
+     * Moves the instrument through time by [detents] steps of a watch crown or bezel: a day per
+     * step in the Sun view, twenty minutes in the Earth view and a month in the galactic view.
+     */
+    fun scrubBy(detents: Float) {
+        if (transitionFrom != null || detents == 0f) return
+        val secondsPerDetent = when (state) {
+            ViewState.HELIOCENTRIC -> 86_400.0
+            ViewState.GEOCENTRIC -> 1_200.0
+            ViewState.GALACTIC -> Astronomy.SYNODIC_MONTH_DAYS * 86_400.0
+        }
+        realtime = false
+        selectedInstant = selectedInstant.plusMillis((secondsPerDetent * detents * 1_000).toLong())
+        invalidate()
     }
 
     override fun performClick(): Boolean {

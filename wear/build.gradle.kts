@@ -6,31 +6,23 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-/** Upload-key settings for Play releases; kept out of git in keystore.properties next to settings.gradle.kts. */
+/** Same upload key as the phone app: Play serves both from one listing under one package name. */
 val uploadKey = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
 }
-val reportEndpoint = providers.gradleProperty("sundial.reportEndpoint").getOrElse("").trim()
-val reportFields = providers.gradleProperty("sundial.reportFields").getOrElse("").trim()
 
 android {
-    namespace = "com.metavirtuoso.sundial"
+    namespace = "com.metavirtuoso.sundial.wear"
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.metavirtuoso.sundial"
-        minSdk = 26
+        minSdk = 30
         targetSdk = 36
-        versionCode = 14
+        // Wear builds live in their own versionCode range so they never collide with the phone's.
+        versionCode = 1_000_014
         versionName = "3.0.0"
-        buildConfigField("String", "REPORT_ENDPOINT", "\"$reportEndpoint\"")
-        buildConfigField("String", "REPORT_FIELDS", "\"$reportFields\"")
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildFeatures {
-        buildConfig = true
     }
 
     signingConfigs {
@@ -49,10 +41,7 @@ android {
             signingConfig = signingConfigs.findByName("upload")
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
 
@@ -60,10 +49,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
-    }
-
-    testOptions {
-        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -75,22 +60,9 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
-    implementation("androidx.work:work-runtime:2.11.2")
-    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("androidx.activity:activity:1.9.3")
+    implementation("androidx.wear:wear:1.3.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
-}
-
-// The Play bundle must be signed with the upload key, and must be able to send "report this
-// reading" submissions (Google Play's AI-generated content policy).
-tasks.configureEach {
-    if (name == "bundleRelease") {
-        doFirst {
-            check(uploadKey.isNotEmpty()) { "Create keystore.properties with the upload key before building a Play bundle." }
-            check(reportEndpoint.isNotEmpty()) { "Set sundial.reportEndpoint in gradle.properties before building a Play bundle." }
-        }
-    }
 }

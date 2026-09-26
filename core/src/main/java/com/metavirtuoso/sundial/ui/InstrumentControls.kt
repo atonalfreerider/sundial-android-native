@@ -12,10 +12,10 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
-import com.metavirtuoso.sundial.R
+import com.metavirtuoso.sundial.core.R
 
 /** The shared look of Sundial's native controls: instrument type, brass switches, hairlines. */
-internal class InstrumentControls(private val context: Context) {
+class InstrumentControls(private val context: Context) {
     private val density = context.resources.displayMetrics.density
     val typeface = context.resources.getFont(R.font.franklin_condensed)
 

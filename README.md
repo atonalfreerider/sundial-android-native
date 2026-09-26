@@ -12,6 +12,29 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
 Play Store releases (signing, store assets, policy answers) are described in [play/RELEASE.md](play/RELEASE.md).
 
+## Modules
+
+- `:core` — the instrument shared by phone and watch: astronomy, calendar maths, styles and `SundialView`.
+- `:app` — the phone app (tuck menus, calendars, astrology and horoscopes, wallpaper).
+- `:wear` — the Wear OS app (same package, `com.metavirtuoso.sundial`), built with `./gradlew :wear:assembleDebug`.
+
+## Wear OS
+
+The watch runs the same instrument fitted to the face: on a round watch the annual dial fills the
+screen inside the bezel; a rectangular watch keeps a strip below the dial for the time.
+
+- Tap the Sun to fly to the Earth view and the Earth to fly back; drag the Earth or Moon as on the phone.
+- Turn the crown or bezel to move through time: a day per step in the Sun view, 20 minutes in the
+  Earth view, a month in the galactic view. Tap **NOW** to return.
+- Long-press the dial for settings: clock, astrology mode, hemisphere, galactic view, return to now
+  and the aesthetic (including Brass Watch).
+- The always-on display shows the instrument dim and grey on black with the time, updated each
+  minute, shifting slightly to protect OLED screens.
+
+Calendars, horoscopes and the wallpaper stay on the phone. Emulators: create `wearos_large_round`
+and `wearos_rect` devices on the Android 36 Wear OS image and start them with
+`-gpu swangle_indirect` (the SwiftShader renderer crashed rendering the brass face).
+
 ## Pixel/device verification
 
 The device-side integration test reads the actual Android calendar provider. With the Pixel attached and Google Calendar synced:

@@ -32,6 +32,24 @@ Developer account: https://play.google.com/console/u/0/developers/78588590679112
    Primitive landing site (`PRIMITIVE/landing/src/legal/sundial-privacy.md`); keep it in step
    with `play/privacy-policy.md`. Contact: themetavirtuoso@gmail.com.
 
+## Wear OS
+
+The watch app is `:wear`, published in the same listing with the same package and upload key.
+Its versionCode sits in its own range (1,000,014 for 3.0.0) so it never collides with the
+phone's. Build it with:
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew :wear:bundleRelease
+```
+
+The bundle is `wear/build/outputs/bundle/release/wear-release.aab`. Wear OS store screenshots
+(1:1, round) come from `WatchStoreCapture` on a watch emulator:
+
+```bash
+adb shell am instrument -w -e storeAssets true -e class com.metavirtuoso.sundial.wear.WatchStoreCapture com.metavirtuoso.sundial.test/androidx.test.runner.AndroidJUnitRunner
+adb pull /sdcard/Android/data/com.metavirtuoso.sundial/files/store-wear/. play/graphics/
+```
+
 ## Store assets
 
 Rendered from the app itself, with sample data only:
@@ -53,10 +71,12 @@ screenshots. Listing text is in `play/listing/en-US/`.
 2. Build and test:
 
    ```bash
-   JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew test bundleRelease
+   JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew test :app:bundleRelease :wear:bundleRelease
    ```
 
-   The bundle is `app/build/outputs/bundle/release/app-release.aab`.
+   The bundles are `app/build/outputs/bundle/release/app-release.aab` (phone) and
+   `wear/build/outputs/bundle/release/wear-release.aab` (watch). Raise the watch versionCode with
+   the phone's.
 3. Upload it to the internal testing track first, install from Play on a device, then promote
    to production.
 

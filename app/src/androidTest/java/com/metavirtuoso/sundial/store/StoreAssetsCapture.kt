@@ -7,6 +7,7 @@ import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.metavirtuoso.sundial.R
+import com.metavirtuoso.sundial.core.R as CoreR
 import com.metavirtuoso.sundial.calendar.CalendarOccurrence
 import com.metavirtuoso.sundial.calendar.DeviceCalendar
 import com.metavirtuoso.sundial.ui.AstrologyPanel
@@ -97,7 +98,7 @@ class StoreAssetsCapture {
 
     /** Full-bleed 512 × 512 icon: Play applies its own rounded mask. */
     private fun icon() {
-        val drawable = context.getDrawable(R.mipmap.ic_launcher) as AdaptiveIconDrawable
+        val drawable = context.getDrawable(CoreR.mipmap.ic_launcher) as AdaptiveIconDrawable
         val size = 512
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
