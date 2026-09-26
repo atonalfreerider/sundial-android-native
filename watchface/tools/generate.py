@@ -696,7 +696,7 @@ class Face:
         def text(hours, color, glow):
             shadow = f'<Shadow color="{glow}" radius="8" offsetX="0" offsetY="0">' if glow else ''
             return (f'<PartText x="{round(self.cx - 110)}" y="{top}" width="220" height="{height}">'
-                    f'<Text align="CENTER"><Font family="franklin_condensed" size="{num(size)}" color="{color}">'
+                    f'<Text align="CENTER"><Font family="sundial_condensed" size="{num(size)}" color="{color}">'
                     f'{shadow}<Template>%s:%s<Parameter expression="{hours}"/>'
                     f'<Parameter expression="[MINUTE_Z]"/></Template>{"</Shadow>" if glow else ""}</Font></Text>'
                     f'</PartText>')

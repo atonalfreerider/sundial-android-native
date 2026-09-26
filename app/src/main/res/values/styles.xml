@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Sundial" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">@font/franklin_condensed</item>
+        <item name="android:fontFamily">@font/sundial_condensed</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowLightStatusBar">false</item>

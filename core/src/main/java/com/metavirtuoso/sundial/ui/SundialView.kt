@@ -58,10 +58,10 @@ class SundialView(
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
-        typeface = resources.getFont(R.font.franklin_condensed)
+        typeface = resources.getFont(R.font.sundial_condensed)
     }
     private val dimText = Paint(text).apply { color = Color.argb(150, 255, 255, 255) }
-    private val labelFont = resources.getFont(R.font.franklin_condensed)
+    private val labelFont = resources.getFont(R.font.sundial_condensed)
     /** Curved event titles; drawTextOnPath lays text from the path start, so it is left aligned. */
     private val arcLabel = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = labelFont }
     private val arcPath = Path()
@@ -2343,7 +2343,7 @@ class SundialView(
         val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = withAlpha(instrumentColor, 225)
             textSize = 13f * screenDensity
-            typeface = resources.getFont(R.font.franklin_condensed)
+            typeface = resources.getFont(R.font.sundial_condensed)
         }
         val bodyTop = bounds.top + 38f * density
         val availableBodyHeight = (bounds.bottom - bodyTop - 9f * density).coerceAtLeast(1f)

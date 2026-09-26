@@ -17,7 +17,7 @@ import com.metavirtuoso.sundial.core.R
 /** The shared look of Sundial's native controls: instrument type, brass switches, hairlines. */
 class InstrumentControls(private val context: Context) {
     private val density = context.resources.displayMetrics.density
-    val typeface = context.resources.getFont(R.font.franklin_condensed)
+    val typeface = context.resources.getFont(R.font.sundial_condensed)
 
     fun title(value: String, subtitle: String): List<View> = listOf(
         label(value, 26f, Color.WHITE).apply { letterSpacing = .12f },
