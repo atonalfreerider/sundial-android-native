@@ -177,8 +177,9 @@ class SundialView(
     val inspectedEventTitleForTest: String? get() = inspectedEvent?.title
     /** True while drawing on the dial face: Brass Watch engraves it in dark ink, everything else is light. */
     private var onFace = true
+    /** The always-on display drops the brass face, so its engraving would be dark ink on black. */
     private val instrumentColor: Int
-        get() = if (onFace) backgroundStyle.instrumentColor else backgroundStyle.chromeColor
+        get() = if (onFace && !ambient) backgroundStyle.instrumentColor else backgroundStyle.chromeColor
     private val brass: Boolean get() = backgroundStyle.brassFace
     private val symbols = PlanetSymbols()
 
@@ -1286,7 +1287,7 @@ class SundialView(
     private fun drawSubdialGear(canvas: Canvas, x: Float, y: Float, r: Float, turn: Double) {
         val gearR = r * DialGeometry.SUBDIAL_GEAR
         val metal = subdialMetal
-        if (brass) {
+        if (brass && !ambient) {
             // Polished steel gear set into the brass: a dark seat, then the bright ring.
             white.color = withAlpha(instrumentColor, 120)
             white.strokeWidth = r * .02f
@@ -1321,6 +1322,8 @@ class SundialView(
 
     /** Astrology mode: the enamel disc in the middle of the gear, which carries the ⊕. */
     private fun drawSubdialEnamel(canvas: Canvas, x: Float, y: Float, r: Float) {
+        // Brass Watch's white enamel would be a bright blob on the always-on display.
+        if (brass && ambient) return
         fill.color = if (brass) 0xFFE9E7DF.toInt() else withAlpha(0xFF0D1B2A.toInt(), 200)
         canvas.drawCircle(x, y, r * DialGeometry.SUBDIAL_GEAR * .82f, fill)
     }
