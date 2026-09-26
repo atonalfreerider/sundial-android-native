@@ -71,4 +71,5 @@ Test and release → Testing → **Internal testing**
 **Personal** developer accounts created after 13 November 2023 must first run a closed test
 with at least 12 testers opted in for the 14 days before applying for production access
 (https://support.google.com/googleplay/android-developer/answer/14151465); organisation
-accounts can go straight to production. Promote the tested release, then send for review.
+accounts can go straight to production. Promote the tested release, then send for review. The plan, tester invitation and draft
+questionnaire answers are in `TESTING.md`.

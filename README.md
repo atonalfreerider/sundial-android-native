@@ -26,7 +26,7 @@ The test prefers calendars whose account type is `com.google`, expands recurring
 
 ## Calendar behavior
 
-The app requests read-only calendar permission. Google calendars already synchronized by Android are read through `CalendarContract`; no Google password, OAuth token, or event write permission is used. Recurring events are expanded through `CalendarContract.Instances`, all-day boundaries remain calendar dates, and timed events are converted with `ZoneId` rules (including DST and non-hour offsets).
+The app asks for read-only calendar permission only when you choose to allow it in the calendar menu, never at launch. Google calendars already synchronized by Android are read through `CalendarContract`; no Google password, OAuth token, or event write permission is used. Recurring events are expanded through `CalendarContract.Instances`, all-day boundaries remain calendar dates, and timed events are converted with `ZoneId` rules (including DST and non-hour offsets).
 
 ## Time model
 

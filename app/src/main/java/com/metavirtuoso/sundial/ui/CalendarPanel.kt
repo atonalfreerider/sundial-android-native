@@ -12,6 +12,7 @@ class CalendarPanel(context: Context) : LinearLayout(context) {
     private val selectedCalendarIds = linkedSetOf<Long>()
 
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
+    var onAccessRequested: (() -> Unit)? = null
 
     init {
         orientation = VERTICAL
@@ -50,7 +51,18 @@ class CalendarPanel(context: Context) : LinearLayout(context) {
         }
     }
 
-    fun setPermissionDenied() = showMessage("Calendar permission denied")
+    /**
+     * Explains what calendar access is for and asks for it on request. [openSettings] is used once
+     * Android will no longer show the permission dialog.
+     */
+    fun setAccessNeeded(openSettings: Boolean) {
+        showMessage("Show events from the calendars synced to this phone around Sundial's year and day " +
+            "dials. Access is read-only, and calendar data never leaves your device.")
+        list.addView(controls.action(
+            if (openSettings) "ALLOW IN SETTINGS" else "ALLOW CALENDAR ACCESS",
+            "Allow Sundial to read your synced calendars",
+        ) { onAccessRequested?.invoke() })
+    }
 
     private fun showMessage(message: String) {
         list.removeAllViews()

@@ -256,7 +256,26 @@ class SundialView(context: Context) : View(context) {
             drawChrome(canvas)
             inspectedEvent?.let { drawEventInspectionOverlay(canvas, it) }
         }
+        if (!wallpaperMode) updateSpokenDescription()
         if (running && !wallpaperMode) postInvalidateDelayed(if (showClock) 250L else 1_000L)
+    }
+
+    /**
+     * The instrument is drawn, not built from views, so TalkBack reads this summary instead. It
+     * changes at most once a minute, so it does not flood accessibility services.
+     */
+    private fun updateSpokenDescription() {
+        val local = selectedInstant.atZone(zone)
+        val moment = local.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy, h:mm a"))
+        val description = when (state) {
+            ViewState.HELIOCENTRIC -> "Sundial solar view, $moment. The year dial circles the Sun; " +
+                "tap the Sun to fly to the Earth view, or drag the Earth to move through the year."
+            ViewState.GEOCENTRIC -> "Sundial Earth view, $moment. The day and lunar dials circle the Earth; " +
+                "tap the Earth to return to the solar view, or drag the Moon to move through the month."
+            ViewState.GALACTIC -> "Sundial galactic view, $moment. The Sun carries the planets through space; " +
+                "drag to move through the years, or tap to return."
+        }
+        if (contentDescription != description) contentDescription = description
     }
 
     private fun useInk(face: Boolean) {
@@ -1927,6 +1946,23 @@ class SundialView(context: Context) : View(context) {
         val bottomBounds = RectF(left, dialBottom + 10f * density, right, bottomLimit)
         val minimumPanelHeight = 92f * density
         val sign = zodiacProfile.resolvedSign()
+
+        // Landscape tablets and foldables (Android 16 ignores the portrait lock there): the dial
+        // fills the height, so the reading sits in the free space either side of it instead.
+        val (dialCx, _, _) = geometry()
+        val sideWidth = minOf(dialCx - r * 1.1f - 28f * density, 360f * density)
+        if (sideWidth >= 200f * density && topBounds.height() < minimumPanelHeight) {
+            val (first, second) = splitHoroscope(value)
+            val top = (if (forWallpaper) 24f else 80f) * density
+            val bottom = height - (if (forWallpaper) 24f else 84f) * density
+            val cardHeight = minOf(bottom - top, 380f * density)
+            val cardTop = top + (bottom - top - cardHeight) / 2f
+            drawHoroscopePanel(canvas, RectF(16f * density, cardTop, 16f * density + sideWidth, cardTop + cardHeight),
+                "${sign.symbol}  ${sign.displayName.uppercase()} · TODAY'S ORACLE", first)
+            drawHoroscopePanel(canvas, RectF(width - 16f * density - sideWidth, cardTop, width - 16f * density, cardTop + cardHeight),
+                if (forWallpaper) "CONTINUED · CELESTIAL WALLPAPER" else "WRITTEN BY ON-DEVICE AI · TAP TO REPORT", second)
+            return
+        }
 
         if (topBounds.height() >= minimumPanelHeight && bottomBounds.height() >= minimumPanelHeight) {
             val (first, second) = splitHoroscope(value)

@@ -87,6 +87,11 @@ class StoreAssetsCapture {
             screen("6-settings", SundialView.ViewState.HELIOCENTRIC, CelestialStyle.BRASS_WATCH, astrology = false, openMenu = 0)
             screen("7-astrology-menu", SundialView.ViewState.HELIOCENTRIC, CelestialStyle.VOID_BLACK, astrology = true, openMenu = 2)
             screen("8-calendars", SundialView.ViewState.GEOCENTRIC, CelestialStyle.COSMIC_VIOLET, astrology = false, openMenu = 1)
+            // Tablets run Sundial in landscape too: Android 16 ignores the portrait lock on large screens.
+            screen("tablet-1-brass-astrology", SundialView.ViewState.HELIOCENTRIC, CelestialStyle.BRASS_WATCH, astrology = true, size = TABLET)
+            screen("tablet-2-earth-view", SundialView.ViewState.GEOCENTRIC, CelestialStyle.CRIMSON_NEBULA, astrology = false, size = TABLET)
+            screen("tablet-3-solar-view", SundialView.ViewState.HELIOCENTRIC, CelestialStyle.DEEP_SPACE_BLUE, astrology = false, size = TABLET)
+            screen("tablet-4-astrology-menu", SundialView.ViewState.HELIOCENTRIC, CelestialStyle.VOID_BLACK, astrology = true, openMenu = 2, size = TABLET)
         }
     }
 
@@ -124,10 +129,9 @@ class StoreAssetsCapture {
         style: CelestialStyle,
         astrology: Boolean,
         openMenu: Int? = null,
+        size: Pair<Int, Int> = PHONE,
     ) {
-        // 2:1, the tallest phone screenshot Play accepts.
-        val width = 1080
-        val height = 2160
+        val (width, height) = size
         val view = SundialView(context)
         view.setSelectedCalendarIds(setOf(1L, 2L))
         view.setCalendarOccurrences(events())
@@ -172,6 +176,13 @@ class StoreAssetsCapture {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         host.draw(Canvas(bitmap))
         save(bitmap, name)
+    }
+
+    private companion object {
+        /** 2:1, the tallest phone screenshot Play accepts. */
+        val PHONE = 1080 to 2160
+        /** A 10-inch tablet in landscape. */
+        val TABLET = 2560 to 1600
     }
 
     private fun save(bitmap: Bitmap, name: String) {

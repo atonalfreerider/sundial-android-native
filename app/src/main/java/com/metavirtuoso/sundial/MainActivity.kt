@@ -49,6 +49,8 @@ class MainActivity : Activity() {
     private var horoscopeGenerating = false
     private lateinit var repository: CalendarRepository
     private lateinit var zodiacProfile: ZodiacProfile
+    private var calendarsLoaded = false
+    private var calendarAccessBlocked = false
     private val automaticHoroscope = Runnable { generateHoroscope(automatic = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -120,6 +122,7 @@ class MainActivity : Activity() {
             )
         }
         calendarPanel = CalendarPanel(this).apply {
+            onAccessRequested = { requestCalendarAccess() }
             onCalendarSelectionChanged = { ids ->
                 sundialView.setSelectedCalendarIds(ids)
                 loadOccurrences(ids)
@@ -157,7 +160,7 @@ class MainActivity : Activity() {
             astrologyPanel.setHoroscopeStatus("Today's on-device horoscope is displayed on the instrument.")
         }
         window.decorView.post { hideSystemBars() }
-        ensureCalendarPermission()
+        refreshCalendarAccess()
     }
 
     /** Android 13+: Back is claimed only while a tuck menu is open, keeping predictive back-to-home otherwise. */
@@ -201,21 +204,45 @@ class MainActivity : Activity() {
         if (hasFocus) hideSystemBars()
     }
 
-    private fun ensureCalendarPermission() {
-        if (repository.hasPermission()) loadCalendars()
-        else requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR), CALENDAR_PERMISSION)
+    /**
+     * Calendar access is asked for in context, from the calendar menu, never at launch. If the
+     * person has granted it (here or in system settings), the synced calendars are listed.
+     */
+    private fun refreshCalendarAccess() {
+        if (repository.hasPermission()) {
+            if (!calendarsLoaded) loadCalendars()
+        } else {
+            calendarsLoaded = false
+            calendarPanel.setAccessNeeded(openSettings = false)
+        }
+    }
+
+    private fun requestCalendarAccess() {
+        if (calendarAccessBlocked) {
+            // Android no longer shows the dialog after a permanent refusal; settings is the only way.
+            startActivity(android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", packageName, null),
+            ))
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR), CALENDAR_PERMISSION)
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CALENDAR_PERMISSION && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode != CALENDAR_PERMISSION) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            calendarAccessBlocked = false
             loadCalendars()
-        } else if (requestCode == CALENDAR_PERMISSION) {
-            calendarPanel.setPermissionDenied()
+        } else {
+            calendarAccessBlocked = !shouldShowRequestPermissionRationale(Manifest.permission.READ_CALENDAR)
+            calendarPanel.setAccessNeeded(openSettings = calendarAccessBlocked)
         }
     }
 
     private fun loadCalendars() {
+        calendarsLoaded = true
         calendarExecutor.execute {
             val calendars = repository.loadCalendars()
             runOnUiThread { calendarPanel.setCalendars(calendars) }
@@ -353,6 +380,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         sundialView.resumeClock()
+        // Access may have been granted or revoked in system settings while we were away.
+        if (::calendarPanel.isInitialized) refreshCalendarAccess()
         // A new day (or a first launch with astrology on) gets its reading without being asked.
         scheduleHoroscope(0L)
     }

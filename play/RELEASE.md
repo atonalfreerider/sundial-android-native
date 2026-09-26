@@ -61,4 +61,5 @@ screenshots. Listing text is in `play/listing/en-US/`.
    to production.
 
 Console answers for Data safety, content rating and app content are drafted in
-`play/data-safety.md`; `play/CONSOLE.md` walks through the Console field by field.
+`play/data-safety.md`; `play/CONSOLE.md` walks through the Console field by field, and `play/TESTING.md` covers the
+12-tester closed test this personal account needs before production.
