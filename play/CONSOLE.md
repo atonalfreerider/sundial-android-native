@@ -50,6 +50,7 @@ Grow → Store presence → **Main store listing**
 | App icon | `graphics/icon-512.png` |
 | Feature graphic | `graphics/feature-graphic-brass.png` (or `-crimson`) |
 | Phone screenshots | `graphics/1-…` to `graphics/8-…` (in order) |
+| 10-inch tablet screenshots | `graphics/tablet-1-…` to `graphics/tablet-4-…` (optional; helps the app show on tablets) |
 
 ## 4. Internal testing release
 

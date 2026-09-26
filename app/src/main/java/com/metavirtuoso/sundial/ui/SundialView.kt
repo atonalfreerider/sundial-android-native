@@ -1358,9 +1358,15 @@ class SundialView(context: Context) : View(context) {
             letterSpacing = .08f
             color = withAlpha(instrumentColor, 215)
         }
-        val y = (if (showClock) 62f else 36f) * density
-        canvas.drawText("${name.uppercase()}  ·  ${local.format(DateTimeFormatter.ofPattern("EEE HH:mm")).uppercase()}",
-            width / 2f, y, caption)
+        val label = "${name.uppercase()}  ·  ${local.format(DateTimeFormatter.ofPattern("EEE HH:mm")).uppercase()}"
+        if (width > height) {
+            // In landscape the Sun sits at the top centre of the Earth view; use the free corner
+            // beside the settings button instead.
+            caption.textAlign = Paint.Align.LEFT
+            canvas.drawText(label, 80f * density, 38f * density, caption)
+        } else {
+            canvas.drawText(label, width / 2f, (if (showClock) 62f else 36f) * density, caption)
+        }
     }
 
     private fun drawGalactic(canvas: Canvas) {
@@ -1951,7 +1957,7 @@ class SundialView(context: Context) : View(context) {
         // fills the height, so the reading sits in the free space either side of it instead.
         val (dialCx, _, _) = geometry()
         val sideWidth = minOf(dialCx - r * 1.1f - 28f * density, 360f * density)
-        if (sideWidth >= 200f * density && topBounds.height() < minimumPanelHeight) {
+        if (sideWidth >= 150f * density && topBounds.height() < minimumPanelHeight) {
             val (first, second) = splitHoroscope(value)
             val top = (if (forWallpaper) 24f else 80f) * density
             val bottom = height - (if (forWallpaper) 24f else 84f) * density
@@ -1982,7 +1988,10 @@ class SundialView(context: Context) : View(context) {
         }
 
         val fallbackHeight = minOf(height * .30f, 250f * density)
-        val fallbackTop = (bottomLimit - fallbackHeight).coerceAtLeast(dialBottom + 8f * density)
+        var fallbackTop = (bottomLimit - fallbackHeight).coerceAtLeast(dialBottom + 8f * density)
+        // No free band below the dial either: lay the card over the dial's lower edge rather than
+        // lose the reading.
+        if (bottomLimit - fallbackTop < 120f * density) fallbackTop = bottomLimit - minOf(fallbackHeight, 170f * density)
         drawHoroscopePanel(
             canvas,
             RectF(left, fallbackTop, right, bottomLimit),
@@ -2020,12 +2029,18 @@ class SundialView(context: Context) : View(context) {
         white.strokeWidth = density
         canvas.drawRoundRect(bounds, 18f * density, 18f * density, white)
 
-        val titlePaint = Paint(text).apply {
+        val titlePaint = TextPaint(text).apply {
             color = backgroundStyle.accentColor
-            textSize = 17f * density
+            textSize = 17f * screenDensity
             letterSpacing = .09f
         }
-        canvas.drawText(title, bounds.centerX(), bounds.top + 23f * density, titlePaint)
+        // Narrow cards (beside the dial on landscape tablets) shrink the title, then shorten it.
+        val titleWidth = bounds.width() - 24f * density
+        while (titlePaint.measureText(title) > titleWidth && titlePaint.textSize > 11f * density) {
+            titlePaint.textSize -= density
+        }
+        val fittedTitle = TextUtils.ellipsize(title, titlePaint, titleWidth, TextUtils.TruncateAt.END).toString()
+        canvas.drawText(fittedTitle, bounds.centerX(), bounds.top + 23f * density, titlePaint)
         canvas.save()
         canvas.translate(bounds.left + 19f * density, bodyTop)
         layout.draw(canvas)
