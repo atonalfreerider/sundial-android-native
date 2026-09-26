@@ -50,6 +50,42 @@ adb shell am instrument -w -e storeAssets true -e class com.metavirtuoso.sundial
 adb pull /sdcard/Android/data/com.metavirtuoso.sundial/files/store-wear/. play/graphics/
 ```
 
+## Watch face
+
+The watch face is `:watchface`, a Watch Face Format face (resources only, format version 1, Wear
+OS 4 and later) published as its own app, `com.metavirtuoso.sundial.watchface`, with the same
+upload key. Play will not take a watch face in the same bundle as app code. Walkthrough and
+listing: `play/watchface/`.
+
+Its images are drawn by the instrument itself (`SundialView.drawWatchFaceLayer`), and
+`watchface/tools/generate.py` turns them into `res/raw/watchface.xml`, whose expressions move the
+Earth, planets, Moon and globe. After changing the instrument's look, rebuild them with a Wear
+OS emulator running (the 454 px round one):
+
+```bash
+watchface/tools/build-assets.sh
+```
+
+This renders the layers, regenerates the face, checks every expression against the
+instrument's astronomy (`WatchFaceReferenceTest`), and runs Google's format validator and
+memory-footprint check (`wff-validator.jar` and `memory-footprint.jar` from
+https://github.com/google/watchface/releases, in `~/Android/wff-tools`). The generated images
+and XML are committed, so a normal build needs none of this. Build the bundle with:
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew :watchface:bundleRelease
+```
+
+It is `watchface/build/outputs/bundle/release/watchface-release.aab`. Try a build on the emulator
+with `adb install`, then
+`adb shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE --es operation set-watchface --es watchFaceId com.metavirtuoso.sundial.watchface`.
+
+Things the watch's renderer does that the format's documentation does not say, all handled by
+the generator: groups need unique names; a setting nested in another setting's option does not
+follow changes, so astrology mode is read with `[CONFIGURATION.astrology]`; `?:` binds tighter
+than comparisons; `%` fails on negative numbers; and `[UTC_TIMESTAMP]` makes the face redraw ten
+times a second, so time is counted from the local date and `[TIMEZONE_OFFSET_DST]` instead.
+
 ## Store assets
 
 Rendered from the app itself, with sample data only:

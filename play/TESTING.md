@@ -16,6 +16,10 @@ the minimum to apply, not a guarantee: Google also looks at whether testers actu
    account used on their Android phone, taps *Become a tester*, then installs from Play.
 5. Leave everyone opted in for the full 14 days. Counting restarts if the total drops below 12.
 
+The watch face (`play/watchface/`) is a separate app and needs its own closed test of 12 testers
+for 14 days. Start it at the same time with the same Google Group; testers with a Wear OS watch
+opt in through its own link and install the face on the watch from Play.
+
 ## Invitation (ready to send)
 
 > Subject: Help test Sundial, a celestial clock for Android

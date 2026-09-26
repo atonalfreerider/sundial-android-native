@@ -4,7 +4,7 @@ Published at https://primitive.io/legal/sundial-privacy/ (keep that page in step
 
 **Effective date:** September 25, 2026
 **Developer:** Metavirtuoso — themetavirtuoso@gmail.com
-**Android package:** `com.metavirtuoso.sundial`
+**Android packages:** `com.metavirtuoso.sundial` (app) and `com.metavirtuoso.sundial.watchface` (watch face)
 
 Sundial ("the app") is a celestial clock for Android. It has no accounts and no advertising, and it is designed so that your personal information stays on your device. This policy explains what the app accesses, what leaves your device, and your choices.
 
@@ -27,6 +27,10 @@ Android may include the app's private settings, including birth details, in your
 **Diagnostics collected by Google ML Kit.** The on-device horoscope feature uses Google's ML Kit GenAI library. ML Kit sends Google limited diagnostic and usage information — such as device model and Android version, app package name and version, performance metrics, error codes, configured languages and an identifier used for diagnostics — to operate and improve the service. It does not include your calendar data, birth details or horoscope text. See Google's ML Kit data disclosure: https://developers.google.com/ml-kit/android-data-disclosure
 
 We do not sell your information, and we do not use it for advertising.
+
+## The Sundial watch face
+
+The Sundial watch face for Wear OS is a separate download. It contains no code and requests no permissions: the watch draws it from the time, date and time zone, and from the style you choose in the watch's face editor. It collects, stores and transmits no information.
 
 ## Permissions
 

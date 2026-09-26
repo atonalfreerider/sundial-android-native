@@ -9,6 +9,11 @@ object DialGeometry {
     const val EARTH_ORBIT = 0.5000f
     const val MARS_ORBIT = 0.7615f
 
+    /** The astrology mode's zodiac ring, and where its hands meet it. */
+    const val ZODIAC_OUTER = .875f
+    const val ZODIAC_INNER = .705f
+    const val ZODIAC_HAND_END = .692f
+
     // The native viewport radius is the lunar dial, rather than Unity's annual dial.
     const val MOON_DIAL = 0.965f
     /** One Unity world unit on the Earth instrument, whose lunar dial is 67.5 units. */

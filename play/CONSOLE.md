@@ -76,6 +76,10 @@ Test and release → Testing → **Internal testing**
 3. Testing → **Internal testing** (Wear OS track) → create a release with
    `sundial-wear-3.0.0-1000014.aab`. Wear OS releases go through an extra Wear quality review.
 
+## 4c. Watch face
+
+The watch face is a separate app with its own listing: see `watchface/CONSOLE.md`.
+
 ## 5. Production
 
 **Personal** developer accounts created after 13 November 2023 must first run a closed test

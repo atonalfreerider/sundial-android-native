@@ -1,0 +1,16 @@
+Sundial turns your watch into a small orrery. The Sun sits at the centre of an annual dial, and everything around it moves as it really does, updated once a minute.
+
+• The Earth travels the year: its hand points at today's date among the months and seasons, with the current season lit.
+• The Earth carries its own 24-hour gear. The globe turns with the time of day and is lit from the Sun, the Moon circles it on its lunar track, and a red tooth marks your local hour.
+• Mercury, Venus and Mars sit at their true positions around the Sun, each trailing its orbit.
+• The time sits across the top of the dial and follows your watch's 12- or 24-hour setting.
+
+Six styles, as in the Sundial app: Void Black, Crimson Nebula, Deep Space Blue, Cosmic Violet, Solar Bronze, and Brass Watch, a polished brass face with engraved ink.
+
+Astrology mode (optional, off by default) adds the zodiac ring with the Sun's sign lit, the classical planet symbols (☿ ♀ ⊕ ♂ and the lunar crescent), and hands from the Earth to each body's sign.
+
+The always-on display keeps the whole instrument, in dim grey on black.
+
+Choose a style and turn astrology on or off by pressing and holding the watch face, then tapping the edit button.
+
+The watch face contains no code and collects no data. For the full interactive instrument, with the Earth view, the galactic view and your calendars, get the Sundial app for phones and Wear OS.

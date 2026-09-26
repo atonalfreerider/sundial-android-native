@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="watch_face_name">Sundial</string>
+    <string name="style_label">Style</string>
+    <string name="style_void">Void Black</string>
+    <string name="style_crimson">Crimson Nebula</string>
+    <string name="style_blue">Deep Space Blue</string>
+    <string name="style_violet">Cosmic Violet</string>
+    <string name="style_bronze">Solar Bronze</string>
+    <string name="style_brass">Brass Watch</string>
+    <string name="astrology_label">Astrology</string>
+</resources>

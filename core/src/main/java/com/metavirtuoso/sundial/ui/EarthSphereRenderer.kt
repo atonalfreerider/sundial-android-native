@@ -101,14 +101,47 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
     fun render(instant: Instant, north: Boolean, highlightOffsetMinutes: Int? = null): Bitmap {
         val key = FrameKey(instant.epochSecond / 30L, north, highlightOffsetMinutes)
         frames[key]?.let { return it }
+        val output = renderFrame(
+            Astronomy.greenwichMeanSiderealDegrees(instant), Zodiac.sunLongitude(instant), north,
+            highlightOffsetMinutes, lit = true,
+        )
+        frames[key] = output
+        return output
+    }
 
+    /**
+     * The globe's surface without sunlight, turned [siderealDegrees] and oriented like the solar
+     * view's dial (ecliptic longitude L at canvas angle 180° − L). The watch face turns the Earth
+     * by choosing one of these frames and lays [renderNightShade] over it toward the Sun.
+     */
+    fun renderSurface(siderealDegrees: Double): Bitmap =
+        // With the Sun at longitude 270° the Sun-up frame is already the dial's orientation.
+        renderFrame(siderealDegrees, 270.0, north = true, highlightOffsetMinutes = null, lit = false)
+
+    /** The night side as a black veil in Sun-up coordinates: [render]'s lighting, apart from the surface. */
+    fun renderNightShade(): Bitmap {
+        val s = samples
+        val pixels = IntArray(size * size)
+        for (i in s.index.indices) {
+            pixels[s.index[i]] = ((1f - s.illumination[i]) * s.alpha[i]).toInt().coerceIn(0, 255) shl 24
+        }
+        return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply { setPixels(pixels, 0, size, 0, 0, size, size) }
+    }
+
+    private fun renderFrame(
+        siderealDegrees: Double,
+        sunLongitudeDegrees: Double,
+        north: Boolean,
+        highlightOffsetMinutes: Int?,
+        lit: Boolean,
+    ): Bitmap {
         val s = samples
         val pixels = IntArray(size * size)
         val texture = texturePixels
         val textureWidth = source.width
         val textureHeight = source.height
-        val sidereal = Math.toRadians(Astronomy.greenwichMeanSiderealDegrees(instant))
-        val sunLongitude = Math.toRadians(Zodiac.sunLongitude(instant))
+        val sidereal = Math.toRadians(siderealDegrees)
+        val sunLongitude = Math.toRadians(sunLongitudeDegrees)
         val highlightCenter = highlightOffsetMinutes?.let { Math.toRadians(it / 4.0) }
         val highlightHalfWidth = Math.toRadians(7.5)
         // Inlined EarthOrientation.screenToEquatorial: the per-pixel path must not allocate.
@@ -135,7 +168,7 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
             val v = ((0.5 - latitude / PI) * (textureHeight - 1)).toInt().coerceIn(0, textureHeight - 1)
             val sample = texture[v * textureWidth + u]
 
-            val light = s.illumination[i]
+            val light = if (lit) s.illumination[i] else 1f
             val glow = s.atmosphere[i]
             var red = lift[sample shr 16 and 0xFF] * light + 10f + glow * 0.32f
             var green = lift[sample shr 8 and 0xFF] * light + 14f + glow * 0.52f
@@ -159,7 +192,6 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
         val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         output.setPixels(pixels, 0, size, 0, 0, size, size)
         output.setHasMipMap(true)
-        frames[key] = output
         return output
     }
 
