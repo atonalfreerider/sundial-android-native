@@ -124,6 +124,9 @@ screenshots. Listing text is in `play/listing/en-US/`.
 4. Upload it to the internal testing track first, install from Play on a device, then promote
    to production.
 
+`.github/workflows/release-tag.yml` rejects future release tags whose version does not match both
+the phone and watch `versionName`; published tags remain immutable.
+
 Console answers for Data safety, content rating and app content are drafted in
 `play/data-safety.md`; `play/CONSOLE.md` walks through the Console field by field, and `play/TESTING.md` covers the
 12-tester closed test this personal account needs before production.
