@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-/** Same upload key as the phone app: Play serves both from one listing under one package name. */
+/** Upload-key settings for the standalone Wear app's Play listing. */
 val uploadKey = Properties().apply {
     rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
 }
@@ -16,7 +16,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.metavirtuoso.sundial"
+        applicationId = "com.metavirtuoso.sundial.watchface"
         minSdk = 30
         targetSdk = 36
         // Wear builds live in their own versionCode range so they never collide with the phone's.

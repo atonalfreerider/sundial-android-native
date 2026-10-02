@@ -15,10 +15,12 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Match the tag to phone and watch versions
+      - name: Match the tag, versions, and Play package IDs
         run: |
           phone=$(sed -n 's/^[[:space:]]*versionName = "\([0-9][0-9.]*\)"/\1/p' app/build.gradle.kts | head -1)
           watch=$(sed -n 's/^[[:space:]]*versionName = "\([0-9][0-9.]*\)"/\1/p' wear/build.gradle.kts | head -1)
+          phone_package=$(sed -n 's/^[[:space:]]*applicationId = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -1)
+          watch_package=$(sed -n 's/^[[:space:]]*applicationId = "\([^"]*\)"/\1/p' wear/build.gradle.kts | head -1)
           expected="v$phone"
           if [ -z "$phone" ] || [ -z "$watch" ]; then
             echo "::error::Could not read both versionName values"
@@ -30,5 +32,13 @@ jobs:
           fi
           if [ "$GITHUB_REF_NAME" != "$expected" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match versionName $phone"
+            exit 1
+          fi
+          if [ "$phone_package" != "com.metavirtuoso.sundial" ]; then
+            echo "::error::Phone package $phone_package does not match its Play listing"
+            exit 1
+          fi
+          if [ "$watch_package" != "com.metavirtuoso.sundial.watchface" ]; then
+            echo "::error::Wear package $watch_package does not match its Play listing"
             exit 1
           fi

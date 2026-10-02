@@ -16,7 +16,7 @@ Play Store releases (signing, store assets, policy answers) are described in [pl
 
 - `:core` — the instrument shared by phone and watch: astronomy, calendar maths, styles and `SundialView`.
 - `:app` — the phone app (tuck menus, calendars, astrology and horoscopes, wallpaper).
-- `:wear` — the Wear OS app (same package, `com.metavirtuoso.sundial`), built with `./gradlew :wear:assembleDebug`.
+- `:wear` — the standalone Wear OS app (`com.metavirtuoso.sundial.watchface`), built with `./gradlew :wear:assembleDebug`.
 
 ## Wear OS
 

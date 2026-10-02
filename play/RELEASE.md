@@ -1,6 +1,7 @@
 # Releasing Sundial on Google Play
 
-Package: `com.metavirtuoso.sundial` (permanent once the first bundle is uploaded).
+Phone package: `com.metavirtuoso.sundial` (permanent once the first bundle is uploaded).
+Wear package: `com.metavirtuoso.sundial.watchface`.
 Developer account: https://play.google.com/console/u/0/developers/7858859067911254186
 
 ## One-time setup
@@ -34,9 +35,10 @@ Developer account: https://play.google.com/console/u/0/developers/78588590679112
 
 ## Wear OS
 
-The watch app is `:wear`, published in the same listing with the same package and upload key.
-Its versionCode sits in its own range (1,000,014 for 3.0.0) so it never collides with the
-phone's. Build it with:
+The watch app is `:wear`, published in its own Play listing as
+`com.metavirtuoso.sundial.watchface` with the same upload key. Its versionCode sits in the
+1,000,000 range (1,000,015 for 3.1.0) to preserve the existing Wear listing's version history.
+Build it with:
 
 ```bash
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew :wear:bundleRelease
@@ -46,16 +48,16 @@ The bundle is `wear/build/outputs/bundle/release/wear-release.aab`. Wear OS stor
 (1:1, round) come from `WatchStoreCapture` on a watch emulator:
 
 ```bash
-adb shell am instrument -w -e storeAssets true -e class com.metavirtuoso.sundial.wear.WatchStoreCapture com.metavirtuoso.sundial.test/androidx.test.runner.AndroidJUnitRunner
-adb pull /sdcard/Android/data/com.metavirtuoso.sundial/files/store-wear/. play/graphics/
+adb shell am instrument -w -e storeAssets true -e class com.metavirtuoso.sundial.wear.WatchStoreCapture com.metavirtuoso.sundial.watchface.test/androidx.test.runner.AndroidJUnitRunner
+adb pull /sdcard/Android/data/com.metavirtuoso.sundial.watchface/files/store-wear/. play/graphics/
 ```
 
 ## Watch face
 
-The watch face is `:watchface`, a Watch Face Format face (resources only, format version 1, Wear
-OS 4 and later) published as its own app, `com.metavirtuoso.sundial.watchface`, with the same
-upload key. Play will not take a watch face in the same bundle as app code. Walkthrough and
-listing: `play/watchface/`.
+The legacy resources-only Watch Face Format artifact is `:watchface` (format version 1, Wear OS 4
+and later). It uses the same `com.metavirtuoso.sundial.watchface` listing now served by `:wear`;
+do not upload both modules as competing releases. Its retained generation notes and listing are
+in `play/watchface/`.
 
 Its images are drawn by the instrument itself (`SundialView.drawWatchFaceLayer`), and
 `watchface/tools/generate.py` turns them into `res/raw/watchface.xml`, whose expressions move the

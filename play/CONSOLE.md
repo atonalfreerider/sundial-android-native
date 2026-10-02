@@ -1,7 +1,7 @@
-# Play Console walkthrough for Sundial 3.0.0 (14)
+# Play Console walkthrough for Sundial 3.1.0 (15)
 
-Every value to enter, in order. Files referenced are in this `play/` folder; the bundle is
-`~/Desktop/SUNDIAL/release/sundial-3.0.0-14.aab`.
+Every value to enter, in order. Files referenced are in this `play/` folder; the phone bundle is
+`app/build/outputs/bundle/release/app-release.aab`.
 
 ## 1. Create the app
 
@@ -61,7 +61,7 @@ Test and release → Testing → **Internal testing**
 3. App integrity: **Use Google-generated app signing key** (Play App Signing). The upload key
    is `~/keys/sundial-upload.jks` (SHA-256
    `51:93:FA:0D:FB:06:C2:AF:13:1E:0B:76:A2:CF:77:7F:B9:3C:CF:A9:E8:F6:57:59:53:F2:CE:DE:BC:05:29:16`).
-4. Upload `sundial-3.0.0-14.aab`. Release name: `3.0.0 (14)`.
+4. Upload `app/build/outputs/bundle/release/app-release.aab`. Release name: `3.1.0 (15)`.
 5. Release notes (en-US): `listing/en-US/release-notes.txt`.
 6. Save → Review release → **Start rollout to Internal testing**.
 7. Open the tester opt-in link on the phone, uninstall any locally installed
@@ -69,16 +69,18 @@ Test and release → Testing → **Internal testing**
 
 ## 4b. Wear OS
 
-1. Test and release → **Advanced settings → Form factors** → add **Wear OS** and accept the Wear OS
-   requirements.
+1. Open the standalone Wear app, package `com.metavirtuoso.sundial.watchface`, and accept the
+   Wear OS requirements.
 2. Store presence → Main store listing → **Wear OS screenshots**: `graphics/wear-1-…` to
    `graphics/wear-5-…` (1:1, 454 × 454).
-3. Testing → **Internal testing** (Wear OS track) → create a release with
-   `sundial-wear-3.0.0-1000014.aab`. Wear OS releases go through an extra Wear quality review.
+3. Testing → **Internal testing** → create a release with
+   `wear/build/outputs/bundle/release/wear-release.aab`. Release name: `3.1.0 (1000015)`.
+   Wear OS releases go through an extra Wear quality review.
 
-## 4c. Watch face
+## 4c. Legacy resources-only watch face
 
-The watch face is a separate app with its own listing: see `watchface/CONSOLE.md`.
+The retained `:watchface` module uses the same package and listing as `:wear`; do not upload both
+as competing releases. See `watchface/CONSOLE.md` for its historical setup notes.
 
 ## 5. Production
 
