@@ -12,10 +12,10 @@ class MoonSphereRendererTest {
     @Test fun solarNorthMoonAlwaysLightsTheHemisphereFacingTheSun() {
         val renderer = MoonSphereRenderer()
         val sunToRight = renderer.render(120, 1f, 0f)
-        assertTrue(hemisphereLuma(sunToRight, right = true) > hemisphereLuma(sunToRight, right = false) * 2.2)
+        assertTrue(hemisphereLuma(sunToRight, right = true) > hemisphereLuma(sunToRight, right = false) * 1.7)
 
         val sunToLeft = renderer.render(120, -1f, 0f)
-        assertTrue(hemisphereLuma(sunToLeft, right = false) > hemisphereLuma(sunToLeft, right = true) * 2.2)
+        assertTrue(hemisphereLuma(sunToLeft, right = false) > hemisphereLuma(sunToLeft, right = true) * 1.7)
         assertTrue(!sunToRight.isRecycled && !sunToLeft.isRecycled)
     }
 

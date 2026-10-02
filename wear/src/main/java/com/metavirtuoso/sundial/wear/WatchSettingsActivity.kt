@@ -72,7 +72,7 @@ class WatchSettingsActivity : ComponentActivity() {
 
     private fun showStyles(selected: CelestialStyle) {
         styles.removeAllViews()
-        CelestialStyle.entries.forEach { style ->
+        CelestialStyle.entries.filter { it.pickable }.forEach { style ->
             styles.addView(controls.action("${if (style == selected) "◆" else "◇"}  ${style.displayName.uppercase()}",
                 "Use ${style.displayName}") {
                 CelestialStylePreferences.set(this, style)

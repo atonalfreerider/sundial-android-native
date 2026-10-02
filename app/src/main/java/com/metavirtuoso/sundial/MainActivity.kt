@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import com.metavirtuoso.sundial.astronomy.Zodiac
 import com.metavirtuoso.sundial.calendar.CalendarRepository
+import com.metavirtuoso.sundial.calendar.HolidayIcons
 import com.metavirtuoso.sundial.horoscope.HoroscopeGenerator
 import com.metavirtuoso.sundial.horoscope.ReadingReporter
 import com.metavirtuoso.sundial.ui.AstrologyPanel
@@ -106,7 +107,7 @@ class MainActivity : Activity() {
             onBackgroundStyleChanged = { style ->
                 sundialView.setBackgroundStyle(style)
                 setBackgroundStyle(style)
-                host.iconColor = style.chromeColor
+                host.iconColor = sundialView.effectiveStyle.chromeColor
                 refreshWallpapers()
             }
             onResetNow = {
@@ -131,9 +132,18 @@ class MainActivity : Activity() {
         astrologyPanel = AstrologyPanel(this).apply {
             onZodiacChanged = { enabled -> updateZodiacProfile(zodiacProfile.copy(enabled = enabled), horoscopeDelayMs = 0L) }
             onBirthDateChanged = { date ->
-                updateZodiacProfile(zodiacProfile.copy(birthDate = date, selectedSign = Zodiac.signFor(date)))
+                // A new birthday goes back to the automatic sign, worked out from the moment of birth.
+                updateZodiacProfile(zodiacProfile.copy(birthDate = date, selectedSign = null))
             }
             onBirthTimeChanged = { time -> updateZodiacProfile(zodiacProfile.copy(birthTime = time)) }
+            onBirthZoneChanged = { zoneId ->
+                // A sign that only followed the birthday's usual boundaries becomes automatic again,
+                // so the zone can settle a cusp birth.
+                val automatic = zodiacProfile.selectedSign == null ||
+                    zodiacProfile.selectedSign == zodiacProfile.birthDate?.let(Zodiac::signFor)
+                updateZodiacProfile(zodiacProfile.copy(birthZoneId = zoneId,
+                    selectedSign = if (automatic) null else zodiacProfile.selectedSign))
+            }
             onZodiacSignRequested = { showZodiacSignPicker() }
             onHoroscopeRequested = { generateHoroscope(automatic = false) }
             onReportRequested = { showReportDialog() }
@@ -148,7 +158,7 @@ class MainActivity : Activity() {
                 .panel.id = R.id.calendar_menu
             addMenu(TuckMenuHost.Corner.BOTTOM_END, R.drawable.ic_tuck_astrology, "Astrology", astrologyPanel)
                 .panel.id = R.id.astrology_menu
-            iconColor = CelestialStylePreferences.get(this@MainActivity).chromeColor
+            iconColor = sundialView.effectiveStyle.chromeColor
             onOpenChanged = ::claimBack
         }
         setContentView(host)
@@ -245,7 +255,12 @@ class MainActivity : Activity() {
         calendarsLoaded = true
         calendarExecutor.execute {
             val calendars = repository.loadCalendars()
-            runOnUiThread { calendarPanel.setCalendars(calendars) }
+            runOnUiThread {
+                sundialView.setHolidayCalendarIds(calendars
+                    .filter { HolidayIcons.isHolidayCalendar(it.displayName) }
+                    .map { it.id }.toSet())
+                calendarPanel.setCalendars(calendars)
+            }
         }
     }
 
@@ -269,6 +284,7 @@ class MainActivity : Activity() {
     private fun updateZodiacProfile(profile: ZodiacProfile, horoscopeDelayMs: Long = 900L) {
         zodiacProfile = ZodiacPreferences.set(this, profile)
         sundialView.setZodiacProfile(zodiacProfile)
+        host.iconColor = sundialView.effectiveStyle.chromeColor
         astrologyPanel.setZodiacProfile(zodiacProfile)
         astrologyPanel.setHoroscopeStatus(
             when {
@@ -301,7 +317,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Natal sun sign")
             .setSingleChoiceItems(labels, checked) { dialog, which ->
-                val sign = if (which == 0) zodiacProfile.birthDate?.let(Zodiac::signFor) else signs[which - 1]
+                val sign = if (which == 0) null else signs[which - 1]
                 updateZodiacProfile(zodiacProfile.copy(selectedSign = sign), horoscopeDelayMs = 0L)
                 dialog.dismiss()
             }
@@ -377,8 +393,23 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** The next alarm on the phone is marked on the Earth's hour rings; it is read, never set. */
+    private val alarmReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) = refreshNextAlarm()
+    }
+
+    private fun refreshNextAlarm() {
+        val alarms = getSystemService(android.app.AlarmManager::class.java)
+        sundialView.setNextAlarm(alarms?.nextAlarmClock?.triggerTime?.let(Instant::ofEpochMilli))
+    }
+
     override fun onResume() {
         super.onResume()
+        refreshNextAlarm()
+        val alarmChanged = android.content.IntentFilter(android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
+        // A protected system broadcast: it still arrives with the receiver closed to other apps.
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(alarmReceiver, alarmChanged, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(alarmReceiver, alarmChanged)
         sundialView.resumeClock()
         // Access may have been granted or revoked in system settings while we were away.
         if (::calendarPanel.isInitialized) refreshCalendarAccess()
@@ -387,6 +418,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        unregisterReceiver(alarmReceiver)
         sundialView.pauseClock()
         super.onPause()
     }

@@ -20,8 +20,8 @@ android {
         minSdk = 30
         targetSdk = 36
         // Wear builds live in their own versionCode range so they never collide with the phone's.
-        versionCode = 1_000_014
-        versionName = "3.0.0"
+        versionCode = 1_000_015
+        versionName = "3.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

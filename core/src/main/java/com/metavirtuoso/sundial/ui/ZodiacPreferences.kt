@@ -2,20 +2,39 @@ package com.metavirtuoso.sundial.ui
 
 import android.content.Context
 import com.metavirtuoso.sundial.astronomy.Zodiac
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 data class ZodiacProfile(
     val enabled: Boolean = false,
     val birthDate: LocalDate? = null,
     val birthTime: LocalTime? = null,
     val selectedSign: Zodiac.Sign? = null,
+    /** IANA id of the zone the birth time was read in; null means this device's zone. */
+    val birthZoneId: String? = null,
 ) {
     fun resolvedSign(today: LocalDate = LocalDate.now()): Zodiac.Sign =
-        selectedSign ?: birthDate?.let(Zodiac::signFor) ?: Zodiac.signFor(today)
+        selectedSign ?: natalSign() ?: Zodiac.signFor(today)
+
+    /** The zone the birth time is in: the saved one if it is a valid zone, else the device's. */
+    val birthZone: ZoneId
+        get() = birthZoneId?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
+
+    /** The moment of birth, once date and time are known. */
+    val birthInstant: Instant?
+        get() = if (birthDate != null && birthTime != null) birthDate.atTime(birthTime).atZone(birthZone).toInstant() else null
+
+    /**
+     * The Sun's sign at birth: from the Sun's true longitude at the moment of birth when the time
+     * and zone are known (exact on cusp days), else from the date's usual sign boundaries.
+     */
+    fun natalSign(): Zodiac.Sign? =
+        birthInstant?.let { Zodiac.signForLongitude(Zodiac.sunLongitude(it)) } ?: birthDate?.let(Zodiac::signFor)
 
     val isComplete: Boolean get() = birthDate != null && birthTime != null
-    val signature: String get() = listOf(enabled, birthDate, birthTime, selectedSign).joinToString("|")
+    val signature: String get() = listOf(enabled, birthDate, birthTime, selectedSign, birthZoneId).joinToString("|")
 }
 
 object ZodiacPreferences {
@@ -24,6 +43,7 @@ object ZodiacPreferences {
     private const val OPT_IN_VERSION = "opt_in_version"
     private const val BIRTH_DATE = "birth_date"
     private const val BIRTH_TIME = "birth_time"
+    private const val BIRTH_ZONE = "birth_zone"
     private const val SIGN = "sign"
     private const val HOROSCOPE = "horoscope"
     private const val HOROSCOPE_SIGNATURE = "horoscope_signature"
@@ -41,6 +61,7 @@ object ZodiacPreferences {
             birthDate = values.getString(BIRTH_DATE, null)?.let(LocalDate::parse),
             birthTime = values.getString(BIRTH_TIME, null)?.let(LocalTime::parse),
             selectedSign = values.getString(SIGN, null)?.let { runCatching { Zodiac.Sign.valueOf(it) }.getOrNull() },
+            birthZoneId = values.getString(BIRTH_ZONE, null),
         )
     }
 
@@ -58,6 +79,7 @@ object ZodiacPreferences {
             .putString(BIRTH_DATE, preserved.birthDate?.toString())
             .putString(BIRTH_TIME, preserved.birthTime?.toString())
             .putString(SIGN, preserved.selectedSign?.name)
+            .putString(BIRTH_ZONE, preserved.birthZoneId)
             .apply()
         return preserved
     }
@@ -66,6 +88,7 @@ object ZodiacPreferences {
         requested.copy(
             birthDate = requested.birthDate ?: stored.birthDate,
             birthTime = requested.birthTime ?: stored.birthTime,
+            birthZoneId = requested.birthZoneId ?: stored.birthZoneId,
         )
 
     fun setHoroscope(context: Context, profile: ZodiacProfile, date: LocalDate, text: String) {

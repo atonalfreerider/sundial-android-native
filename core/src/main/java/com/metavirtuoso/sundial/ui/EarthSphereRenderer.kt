@@ -20,7 +20,7 @@ import kotlin.math.sqrt
  * share a single cached frame instead of re-rendering whenever the on-screen size changes.
  */
 class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SIZE) {
-    private data class FrameKey(val timeBucket: Long, val north: Boolean, val highlightOffsetMinutes: Int?)
+    private data class FrameKey(val timeBucket: Long, val north: Boolean, val highlightOffsetMinutes: Int?, val brass: Boolean)
 
     /**
      * The planet glyph (no zone strip) and the Earth view's globe (with it) are both on screen
@@ -75,8 +75,10 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
                 sy[i] = y
                 sz[i] = z
                 // From the ecliptic pole, sunlight is in the screen plane. This produces the
-                // required half-lit globe and a terminator through its center.
-                illumination[i] = (0.10 + y.coerceIn(0.0, 1.0) * 0.90).toFloat()
+                // required half-lit globe and a terminator through its center. The night side
+                // keeps a third of the light, so every continent still reads in the dark.
+                illumination[i] = (NIGHT_LIGHT.toDouble() + y.coerceIn(0.0, 1.0) *
+                    (1.0 - NIGHT_LIGHT.toDouble())).toFloat()
                 atmosphere[i] = (1.0 - z).pow(2.6).times(72).toInt().toFloat()
                 alpha[i] = ((1.0 - ((rr - 0.94) / 0.06).coerceIn(0.0, 1.0)) * 255).toInt()
             }
@@ -89,7 +91,36 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
      * The satellite texture has near-black oceans. Lift its photographic floor before lighting so
      * every longitude still reads as Earth, while the terminator remains.
      */
-    private val lift = FloatArray(256) { (255.0 * (it / 255.0).pow(0.52)).toFloat() }
+    private val lift = FloatArray(256) { (255.0 * (it / 255.0).pow(0.46)).toFloat() }
+
+    /** Land, from the texture: its oceans are a flat deep blue. */
+    private val land: BooleanArray by lazy {
+        val pixels = texturePixels
+        BooleanArray(pixels.size) { i ->
+            val p = pixels[i]
+            val red = p shr 16 and 0xFF
+            val green = p shr 8 and 0xFF
+            val blue = p and 0xFF
+            !(blue - maxOf(red, green) > 12 && red < 48)
+        }
+    }
+
+    /** Texels on a coastline, for the brass globe's etched outlines. */
+    private val coast: BooleanArray by lazy {
+        val w = source.width
+        val h = source.height
+        val mask = land
+        val reach = maxOf(1, w / 1024)
+        BooleanArray(mask.size) { i ->
+            val x = i % w
+            val y = i / w
+            val here = mask[i]
+            (y >= reach && mask[i - reach * w] != here) ||
+                (y < h - reach && mask[i + reach * w] != here) ||
+                mask[y * w + (x + reach) % w] != here ||
+                mask[y * w + (x - reach + w) % w] != here
+        }
+    }
 
     /**
      * Renders the globe as Unity's Earth camera saw it: from the ecliptic pole with the Sun at the
@@ -98,12 +129,12 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
      *
      * [highlightOffsetMinutes] paints Unity's red time-zone strip along that zone's meridian band.
      */
-    fun render(instant: Instant, north: Boolean, highlightOffsetMinutes: Int? = null): Bitmap {
-        val key = FrameKey(instant.epochSecond / 30L, north, highlightOffsetMinutes)
+    fun render(instant: Instant, north: Boolean, highlightOffsetMinutes: Int? = null, brass: Boolean = false): Bitmap {
+        val key = FrameKey(instant.epochSecond / 30L, north, highlightOffsetMinutes, brass)
         frames[key]?.let { return it }
         val output = renderFrame(
             Astronomy.greenwichMeanSiderealDegrees(instant), Zodiac.sunLongitude(instant), north,
-            highlightOffsetMinutes, lit = true,
+            highlightOffsetMinutes, lit = true, brass = brass,
         )
         frames[key] = output
         return output
@@ -134,6 +165,7 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
         north: Boolean,
         highlightOffsetMinutes: Int?,
         lit: Boolean,
+        brass: Boolean = false,
     ): Bitmap {
         val s = samples
         val pixels = IntArray(size * size)
@@ -151,6 +183,11 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
         val cosObliquity = kotlin.math.cos(Math.toRadians(EarthOrientation.OBLIQUITY_DEGREES))
         val mirror = if (north) 1.0 else -1.0
         val twoPi = 2.0 * PI
+        val landMask = if (brass) land else null
+        val coastMask = if (brass) coast else null
+        // Graticule lines about a pixel and a half wide at the centre of the globe.
+        val lineWidth = Math.toRadians(1.5 * 57.3 / (size * .485))
+        val step = Math.toRadians(15.0)
 
         for (i in s.index.indices) {
             val right = s.sx[i] * mirror
@@ -169,6 +206,23 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
             val sample = texture[v * textureWidth + u]
 
             val light = if (lit) s.illumination[i] else 1f
+            if (landMask != null && coastMask != null) {
+                val texel = v * textureWidth + u
+                fun nearLine(angle: Double, width: Double): Boolean {
+                    val offset = angle - step * floor(angle / step + 0.5)
+                    return kotlin.math.abs(offset) < width
+                }
+                // Lines thicken toward the limb as the surface turns away; the equator and
+                // prime meridian are cut deeper.
+                val width = lineWidth / s.sz[i].coerceAtLeast(.25)
+                val majorLatitude = kotlin.math.abs(latitude) < width * 1.8
+                val majorLongitude = kotlin.math.abs(wrapped * twoPi) < width * 1.8
+                val etched = coastMask[texel] || majorLatitude || majorLongitude ||
+                    nearLine(latitude, width) ||
+                    (kotlin.math.abs(latitude) < Math.toRadians(80.0) && nearLine(wrapped * twoPi, width / kotlin.math.cos(latitude).coerceAtLeast(.2)))
+                pixels[s.index[i]] = (s.alpha[i] shl 24) or brassPixel(landMask[texel], etched, light, s.sx[i] * mirror, s.sy[i], s.sz[i], highlightCenter, longitude, highlightHalfWidth)
+                continue
+            }
             val glow = s.atmosphere[i]
             var red = lift[sample shr 16 and 0xFF] * light + 10f + glow * 0.32f
             var green = lift[sample shr 8 and 0xFF] * light + 14f + glow * 0.52f
@@ -197,8 +251,48 @@ class EarthSphereRenderer(private val source: Bitmap, val size: Int = DEFAULT_SI
 
     private fun Int.floorMod(modulus: Int): Int = ((this % modulus) + modulus) % modulus
 
+    /**
+     * One pixel of the brass globe: polished metal seas, matte land a shade darker, engraved
+     * lines in dark ink, lit from the Sun with a soft specular sheen on the day side.
+     */
+    private fun brassPixel(
+        isLand: Boolean, etched: Boolean, light: Float, x: Double, y: Double, z: Double,
+        highlightCenter: Double?, longitude: Double, highlightHalfWidth: Double,
+    ): Int {
+        var red = if (isLand) 207f else 244f
+        var green = if (isLand) 164f else 209f
+        var blue = if (isLand) 82f else 126f
+        // Brass reflects the surrounding face even on the night side. Remap the photographic
+        // light floor to a warm half-light instead of multiplying the metal almost to black; the
+        // remaining range is still large enough for the solar terminator to read immediately.
+        val daylight = ((light - NIGHT_LIGHT) / (1f - NIGHT_LIGHT)).coerceIn(0f, 1f)
+        val metalLight = .56f + daylight * .44f
+        val shade = metalLight * (.86f + .14f * z.toFloat())
+        val sheen = (maxOf(0.0, y * .55 + z * .55 - x * .2).pow(18) * 120).toFloat()
+        red = red * shade + sheen
+        green = green * shade + sheen * .9f
+        blue = blue * shade + sheen * .6f
+        if (highlightCenter != null) {
+            val delta = (longitude - highlightCenter) - 2 * PI * floor((longitude - highlightCenter) / (2 * PI) + 0.5)
+            if (kotlin.math.abs(delta) <= highlightHalfWidth) {
+                // Red enamel filled into the zone's band.
+                red = red * .45f + 200f * .55f
+                green = green * .45f + 30f * .55f
+                blue = blue * .45f + 28f * .55f
+            }
+        }
+        if (etched) {
+            red = red * .24f + 69f * .76f * metalLight
+            green = green * .24f + 44f * .76f * metalLight
+            blue = blue * .24f + 14f * .76f * metalLight
+        }
+        return (red.toInt().coerceIn(0, 255) shl 16) or (green.toInt().coerceIn(0, 255) shl 8) or blue.toInt().coerceIn(0, 255)
+    }
+
     companion object {
         /** Enough for the Earth view's full-width globe on a phone. */
         const val DEFAULT_SIZE = 512
+        /** Share of full sunlight on the night side. */
+        private const val NIGHT_LIGHT = .32f
     }
 }

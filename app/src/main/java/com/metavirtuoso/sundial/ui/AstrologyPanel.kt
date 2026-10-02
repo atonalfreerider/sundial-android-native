@@ -9,12 +9,15 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.metavirtuoso.sundial.astronomy.Zodiac
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * The lower-right tuck menu: every astrology input in one place. Birth date and time are typed
@@ -31,6 +34,7 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
     private val minuteField = numberField("MM", 2, "Birth minutes")
     private val amButton = meridiem("AM")
     private val pmButton = meridiem("PM")
+    private val zoneField = zoneField()
     private val validation = controls.label("", 13f, 0xFFFF8F7A.toInt()).apply {
         setPadding(controls.dp(2), controls.dp(4), controls.dp(2), 0)
     }
@@ -51,6 +55,7 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
     var onZodiacChanged: ((Boolean) -> Unit)? = null
     var onBirthDateChanged: ((LocalDate) -> Unit)? = null
     var onBirthTimeChanged: ((LocalTime) -> Unit)? = null
+    var onBirthZoneChanged: ((String) -> Unit)? = null
     var onZodiacSignRequested: (() -> Unit)? = null
     var onHoroscopeRequested: (() -> Unit)? = null
     var onReportRequested: (() -> Unit)? = null
@@ -70,6 +75,8 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
         addView(captions("MONTH" to 1f, "DAY" to 1f, "YEAR" to 1.7f))
         addView(controls.section("BIRTH TIME"))
         addView(row(hourField to 1f, colon() to .28f, minuteField to 1f, amButton to .9f, pmButton to .9f))
+        addView(controls.section("BIRTH TIME ZONE"))
+        addView(row(zoneField to 1f))
         addView(validation)
         addView(controls.section("SUN SIGN"))
         addView(signAction)
@@ -109,10 +116,12 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
             minuteField.setIfIdle(time.minute.toString().padStart(2, '0'))
             setMeridiem(time.hour >= 12)
         }
+        zoneField.hint = ZoneId.systemDefault().id.replace('_', ' ') + "  (this device)"
+        if (!zoneField.hasFocus()) zoneField.setText(value.birthZoneId?.replace('_', ' ').orEmpty(), false)
         syncing = false
         val sign = value.resolvedSign()
         signAction.text = "${sign.symbol}  ${sign.displayName.uppercase()}" +
-            if (value.selectedSign == null || value.birthDate?.let(Zodiac::signFor) == value.selectedSign) "  · FROM BIRTHDAY" else ""
+            if (value.selectedSign == null || value.natalSign() == value.selectedSign) "  · FROM BIRTH" else ""
         horoscopeAction.isEnabled = value.isComplete
         horoscopeAction.alpha = if (value.isComplete) 1f else .46f
     }
@@ -149,6 +158,41 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
                 if (time != profile.birthTime) onBirthTimeChanged?.invoke(time)
             }
             .onFailure { showValidation(it.message) }
+    }
+
+    /** Saves the typed or chosen zone once it names a real one, e.g. "America/Los Angeles". */
+    private fun commitZone() {
+        if (syncing) return
+        val typed = zoneField.text.toString().trim().replace(' ', '_')
+        if (typed.isEmpty()) return showValidation(null)
+        val id = ZONE_IDS.firstOrNull { it.equals(typed, ignoreCase = true) }
+            ?: ZONE_IDS.singleOrNull { it.substringAfterLast('/').equals(typed, ignoreCase = true) }
+        if (id == null) return showValidation(if (zoneField.hasFocus()) null else "Choose a time zone from the list, e.g. America/Chicago")
+        showValidation(null)
+        if (id != profile.birthZoneId) onBirthZoneChanged?.invoke(id)
+    }
+
+    private fun zoneField() = AutoCompleteTextView(context).apply {
+        contentDescription = "Birth time zone"
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        maxLines = 1
+        threshold = 2
+        textSize = 17f
+        typeface = controls.typeface
+        setTextColor(Color.WHITE)
+        setHintTextColor(0x55FFFFFF)
+        setSelectAllOnFocus(true)
+        imeOptions = EditorInfo.IME_ACTION_DONE
+        setAdapter(ArrayAdapter(context, android.R.layout.simple_dropdown_item_1line, ZONE_IDS.map { it.replace('_', ' ') }))
+        setOnItemClickListener { _, _, _, _ -> commitZone(); clearFocus() }
+        setOnFocusChangeListener { _, focused -> if (!focused) commitZone() }
+        setOnEditorActionListener { _, _, _ -> commitZone(); clearFocus(); false }
+        background = GradientDrawable().apply {
+            cornerRadius = controls.dp(12).toFloat()
+            setColor(0x14FFFFFF)
+            setStroke(controls.dp(1), 0x45FFFFFF)
+        }
+        setPadding(controls.dp(14), 0, controls.dp(14), 0)
     }
 
     private fun showValidation(message: String?) {
@@ -237,6 +281,15 @@ class AstrologyPanel(context: Context) : LinearLayout(context) {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
         override fun afterTextChanged(s: Editable?) = action()
     })
+
+    private companion object {
+        /** Region/City zones only (no "Etc/GMT+5" or bare abbreviations), sorted for the list. */
+        val ZONE_IDS: List<String> by lazy {
+            ZoneId.getAvailableZoneIds()
+                .filter { it.contains('/') && !it.startsWith("Etc/") && !it.startsWith("SystemV/") && it.first().isUpperCase() }
+                .sorted()
+        }
+    }
 
     /** Updates a field from the saved profile unless the person is typing in it. */
     private fun EditText.setIfIdle(value: String) {

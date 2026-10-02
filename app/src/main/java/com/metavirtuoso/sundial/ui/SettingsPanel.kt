@@ -65,7 +65,7 @@ class SettingsPanel(context: Context) : LinearLayout(context) {
 
     fun setBackgroundStyle(selected: CelestialStyle) {
         styleContainer.removeAllViews()
-        CelestialStyle.entries.forEach { style ->
+        CelestialStyle.entries.filter { it.pickable }.forEach { style ->
             val marker = if (style == selected) "◆" else "◇"
             styleContainer.addView(controls.action(
                 "$marker  ${style.displayName.uppercase()}",

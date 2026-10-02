@@ -25,6 +25,7 @@ import com.metavirtuoso.sundial.astronomy.Astronomy
 import com.metavirtuoso.sundial.astronomy.Zodiac
 import com.metavirtuoso.sundial.calendar.CalendarOccurrence
 import com.metavirtuoso.sundial.calendar.CalendarIntervals
+import com.metavirtuoso.sundial.calendar.HolidayIcons
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -132,7 +133,15 @@ class SundialView(
     private var realtime = true
     private var running = true
     private var wallpaperMode = false
-    private var backgroundStyle = CelestialStylePreferences.get(context)
+    /** The style chosen in settings; [backgroundStyle] is what is drawn. */
+    private var selectedStyle = CelestialStylePreferences.get(context)
+    /** Off only for watch face asset builds, whose layers follow the chosen style alone. */
+    private var useElementPalette = true
+    private val backgroundStyle: CelestialStyle
+        get() = if (useElementPalette) CelestialStyle.effective(selectedStyle, zodiacProfile) else selectedStyle
+
+    /** The palette the instrument is drawn in: see [CelestialStyle.effective]. */
+    val effectiveStyle: CelestialStyle get() = backgroundStyle
     private var zodiacProfile = ZodiacPreferences.get(context)
     private var horoscopeText = ZodiacPreferences.getCurrentHoroscope(context, zodiacProfile, LocalDate.now())
     private var selectedInstant: Instant = Instant.now()
@@ -205,14 +214,14 @@ class SundialView(
         onControlsChanged?.invoke(); invalidate()
     }
     fun setBackgroundStyle(value: CelestialStyle) {
-        backgroundStyle = value
+        selectedStyle = value
         CelestialStylePreferences.set(context, value)
         invalidate()
     }
     /** Freezes the instrument in one moment, style and view for screenshots; nothing is saved. */
     fun freezeForCapture(instant: Instant, captureState: ViewState, style: CelestialStyle) {
         pauseClock()
-        backgroundStyle = style
+        selectedStyle = style
         state = captureState
         transitionFrom = null
         selectedInstant = instant
@@ -224,6 +233,28 @@ class SundialView(
         horoscopeText = ZodiacPreferences.getCurrentHoroscope(context, zodiacProfile, LocalDate.now())
         invalidate()
     }
+    /**
+     * The next alarm set on the device (AlarmManager's next alarm clock), or null. It is marked
+     * with a yellow tooth on the Earth's 24-hour rings when it falls within a day of the instant
+     * shown.
+     */
+    fun setNextAlarm(value: Instant?) {
+        if (value == nextAlarm) return
+        nextAlarm = value
+        invalidate()
+    }
+
+    private var nextAlarm: Instant? = null
+
+    /** Hours past local midnight of the next alarm, if it rings within 24 hours of [selectedInstant]. */
+    private fun alarmHours(): Double? {
+        val alarm = nextAlarm ?: return null
+        val ahead = java.time.Duration.between(selectedInstant, alarm)
+        if (ahead.isNegative || ahead.toMinutes() >= 24 * 60) return null
+        val local = alarm.atZone(zone)
+        return local.hour + local.minute / 60.0 + local.second / 3600.0
+    }
+
     fun setHoroscope(value: String?) { horoscopeText = value?.trim()?.takeIf { it.isNotBlank() }; invalidate() }
     fun setAstrologyContentForTest(profile: ZodiacProfile, horoscope: String?) {
         zodiacProfile = profile
@@ -439,6 +470,9 @@ class SundialView(
             (from == ViewState.GEOCENTRIC && to == ViewState.HELIOCENTRIC)
 
     /** Roll of the Earth camera: it keeps the Sun straight above the Earth. */
+    /** Opacity of the solar view's Earth and subdial; below 1 only while the camera flies. */
+    private var flightEarthAlpha = 1f
+
     private fun earthCameraRotation(): Float = Astronomy.normalizeSignedDegrees(90.0 - currentEarthAngle()).toFloat()
 
     private fun drawTransition(canvas: Canvas, from: ViewState, to: ViewState, progress: Float) {
@@ -494,9 +528,16 @@ class SundialView(
                 0f, 0f, width.toFloat(), height.toFloat(), (heliocentricAlpha * 255).toInt(),
             )
             heliocentricCamera()
-            withTextScreenRotation(cameraRotation.toDouble()) {
-                drawSeasonShading(canvas, cx, cy, r)
-                drawHeliocentricForeground(canvas, cx, cy, r, includeSun = false)
+            // The small Earth and its subdial hand over to the Earth view as it fades in, rather
+            // than riding along as a second, smaller Earth until the dial fades out.
+            flightEarthAlpha = (1f - progress / FLIGHT_EARTH_HANDOVER).coerceIn(0f, 1f)
+            try {
+                withTextScreenRotation(cameraRotation.toDouble()) {
+                    drawSeasonShading(canvas, cx, cy, r)
+                    drawHeliocentricForeground(canvas, cx, cy, r, includeSun = false)
+                }
+            } finally {
+                flightEarthAlpha = 1f
             }
             canvas.restoreToCount(checkpoint)
         }
@@ -605,7 +646,8 @@ class SundialView(
         state = ViewState.HELIOCENTRIC
         transitionFrom = null
         north = true
-        backgroundStyle = style
+        selectedStyle = style
+        useElementPalette = false
         zodiacProfile = ZodiacProfile(enabled = astrology)
         this.ambient = ambient
         selectedInstant = LocalDate.of(WATCH_FACE_YEAR, 1, 1).atStartOfDay(zone).toInstant()
@@ -1150,7 +1192,13 @@ class SundialView(
             drawOrbit(canvas, body, cx, cy, r, angle)
             val point = point(cx, cy, r * orbitRatio(body), angle)
             if (body == Astronomy.Body.EARTH) {
-                drawEarthSubdial(canvas, point.first, point.second, r, cx, cy)
+                if (flightEarthAlpha >= 1f) {
+                    drawEarthSubdial(canvas, point.first, point.second, r, cx, cy)
+                } else if (flightEarthAlpha > .01f) {
+                    val checkpoint = canvas.saveLayerAlpha(null, (flightEarthAlpha * 255).toInt())
+                    drawEarthSubdial(canvas, point.first, point.second, r, cx, cy)
+                    canvas.restoreToCount(checkpoint)
+                }
                 earthPoint = point
             } else {
                 drawPlanetMarker(canvas, body, point.first, point.second, r, cx, cy)
@@ -1304,6 +1352,14 @@ class SundialView(
             drawSprocketTooth(canvas, x, y, gearR, gearR + r * if (hour % 6 == 0) .017f else .011f,
                 hourAngle(hour.toDouble()) + turn, r * .0048f, r * .0008f, polygon)
         }
+        alarmHours()?.let { hours ->
+            polygon.color = ALARM_OUTLINE
+            drawSprocketTooth(canvas, x, y, gearR - r * .006f, gearR + r * .030f, hourAngle(hours) + turn,
+                r * .0092f, r * .0024f, polygon)
+            polygon.color = ALARM_YELLOW
+            drawSprocketTooth(canvas, x, y, gearR - r * .004f, gearR + r * .028f, hourAngle(hours) + turn,
+                r * .0073f, r * .0018f, polygon)
+        }
     }
 
     private fun drawSubdialMoonHand(canvas: Canvas, x: Float, y: Float, r: Float, angle: Double) =
@@ -1435,6 +1491,21 @@ class SundialView(
         }
 
         drawHourSprocket(canvas, cx, cy, hourR, r)
+        alarmHours()?.let { hours ->
+            // A yellow tooth on the hour ring at the alarm, longer than the hour teeth, with a pip
+            // just outside the ring so it reads at a glance.
+            polygon.color = ALARM_OUTLINE
+            drawSprocketTooth(canvas, cx, cy, hourR + r * .016f, hourR - r * .088f, hourAngle(hours),
+                r * .011f, r * .0033f, polygon)
+            polygon.color = ALARM_YELLOW
+            drawSprocketTooth(canvas, cx, cy, hourR + r * .014f, hourR - r * .084f, hourAngle(hours),
+                r * .0087f, r * .0025f, polygon)
+            fill.color = ALARM_OUTLINE
+            val pip = point(cx, cy, hourR + r * .027f, hourAngle(hours))
+            canvas.drawCircle(pip.first, pip.second, r * .0125f, fill)
+            fill.color = ALARM_YELLOW
+            canvas.drawCircle(pip.first, pip.second, r * .0095f, fill)
+        }
         text.textSize = label(r * .038f, 7.5f)
         for (hour in 0 until 24) {
             drawRotatedText(canvas, hour.toString(), cx, cy, hourR * .87f, hourAngle(hour.toDouble()), text, true)
@@ -1461,7 +1532,7 @@ class SundialView(
         canvas.drawOval(RectF(cx - sphereRadius * 1.08f, cy - sphereRadius * .92f,
             cx + sphereRadius * 1.16f, cy + sphereRadius * 1.2f), shadow)
         drawEarthSeal(canvas, cx, cy, sphereRadius, cx, sunY, ornate = true,
-            highlightOffsetMinutes = selectedTimeZoneOffset())
+            highlightOffsetMinutes = selectedZoneMeridianOffset())
 
         drawMoonGlyph(canvas, moonPoint.first, moonPoint.second, r * .041f, cx, sunY)
     }
@@ -1570,6 +1641,15 @@ class SundialView(
         if (selectedTimeZoneOffsetMinutes == null) selectedTimeZoneOffsetMinutes = currentLocalOffset
         return if (selectedTimeZoneIsLocal) currentLocalOffset else selectedTimeZoneOffsetMinutes!!
     }
+
+    /**
+     * Where the red strip lies on the globe: the zone's standard meridian (15° per hour of its
+     * standard offset). The wheel points at the clock time, so in daylight saving time the clock
+     * leads the strip by an hour; the strip stays on the land the zone covers.
+     */
+    private fun selectedZoneMeridianOffset(): Int =
+        if (selectedTimeZoneIsLocal) zone.rules.getStandardOffset(selectedInstant).totalSeconds / 60
+        else selectedTimeZoneOffset()
 
     /**
      * Unity's local wheel around the globe: a thin ring with an outward tooth for every hour. The
@@ -1929,7 +2009,9 @@ class SundialView(
         val year = displayedYear
         val band = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         arcLabel.textSize = yearEventLabelSize(r)
-        occurrences.filter { it.isYearRingEvent }.forEach { event ->
+        val (holidays, events) = occurrences.filter { it.isYearRingEvent }.partition { it.calendarId in holidayCalendarIds }
+        val labels = mutableListOf<ArcLabel>()
+        events.forEach { event ->
             val segment = CalendarIntervals.inYear(event, year, zone) ?: return@forEach
             val eventBand = yearBand(r, event.calendarId)
             band.color = withAlpha(event.color, 145)
@@ -1938,16 +2020,110 @@ class SundialView(
                 cx + eventBand.centerRadius, cy + eventBand.centerRadius)
             canvas.drawArc(arcBounds, annualAngle(segment.startFraction).toFloat(),
                 ((if (north) -360.0 else 360.0) * segment.sweepFraction).toFloat(), false, band)
-            drawArcLabel(canvas, event.title, cx, cy, eventBand.centerRadius,
+            labels += ArcLabel(event.title, eventBand.centerRadius,
                 annualAngle(segment.startFraction + segment.sweepFraction / 2.0),
-                maxOf(segment.sweepFraction * 360.0, MIN_YEAR_LABEL_DEGREES))
+                maxOf(segment.sweepFraction * 360.0, MIN_YEAR_LABEL_DEGREES), segment.sweepFraction)
         }
+        val icons = drawHolidayIcons(canvas, cx, cy, r, holidays, year)
+        drawArcLabelsWithoutOverlap(canvas, cx, cy, labels, icons)
+    }
+
+    /**
+     * Holidays as small icons at their dates on their calendar's band, instead of titles that
+     * would run into each other. Icons that would touch step inward onto a second row.
+     */
+    private fun drawHolidayIcons(
+        canvas: Canvas, cx: Float, cy: Float, r: Float, holidays: List<CalendarOccurrence>, year: Int,
+    ): List<Triple<Float, Double, Double>> {
+        val drawn = mutableListOf<Triple<Float, Double, Double>>()
+        if (holidays.isEmpty()) return drawn
+        // About the band's thickness, so an icon stays within its calendar's ring.
+        val size = yearEventLabelSize(r) * 1.05f
+        holidayPaint.textSize = size
+        val shown = mutableMapOf<String, Double>() // icon -> year fraction where it was last drawn
+        val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = maxOf(density, r * .004f) }
+        val rows = mutableListOf<MutableList<Double>>()
+        holidays.sortedBy { CalendarIntervals.inYear(it, year, zone)?.startFraction ?: 2.0 }.forEach { event ->
+            val segment = CalendarIntervals.inYear(event, year, zone) ?: return@forEach
+            // "Independence Day" and "Independence Day (observed)": one icon is enough.
+            val icon = HolidayIcons.iconFor(event.title)
+            if (shown[icon]?.let { kotlin.math.abs(it - segment.startFraction) < 5.0 / 365.0 } == true) return@forEach
+            shown[icon] = segment.startFraction
+            val eventBand = yearBand(r, event.calendarId)
+            val angle = annualAngle(segment.startFraction + minOf(segment.sweepFraction, 1.0 / 365.0) / 2.0)
+            tick.color = withAlpha(event.color, 220)
+            drawRadialLine(canvas, cx, cy, eventBand.centerRadius - eventBand.thickness / 2f,
+                eventBand.centerRadius + eventBand.thickness / 2f, angle, tick)
+            // The first row whose icons leave room for this one; a row further in otherwise.
+            fun radiusOf(row: Int) = eventBand.centerRadius - row * size * 1.15f
+            var row = 0
+            while (row < rows.size && rows[row].any { Math.toRadians(angularGap(it, angle)) * radiusOf(row) < size * 1.05f }) row++
+            if (row > 2) return@forEach
+            if (row == rows.size) rows += mutableListOf<Double>()
+            rows[row] += angle
+            val radius = radiusOf(row)
+            drawn += Triple(radius, angle, Math.toDegrees((size * .55f / radius).toDouble()))
+            val p = point(cx, cy, radius, angle)
+            canvas.save()
+            // Upright on screen, whatever the camera's roll.
+            canvas.rotate(-textScreenRotation.toFloat(), p.first, p.second)
+            canvas.drawText(icon, p.first, p.second - (holidayPaint.ascent() + holidayPaint.descent()) / 2f, holidayPaint)
+            canvas.restore()
+        }
+        return drawn
+    }
+
+    private val holidayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    /** Calendars whose events are holidays, drawn as icons rather than titled bands. */
+    fun setHolidayCalendarIds(ids: Set<Long>) {
+        if (ids == holidayCalendarIds) return
+        holidayCalendarIds = ids
+        invalidate()
+    }
+
+    private var holidayCalendarIds: Set<Long> = emptySet()
+
+    private fun angularGap(a: Double, b: Double): Double = kotlin.math.abs(Astronomy.normalizeSignedDegrees(a - b))
+
+    private data class ArcLabel(val title: String, val radius: Float, val midAngle: Double, val maxSweepDegrees: Double, val weight: Double)
+
+    /**
+     * Draws the labels longest event first, skipping any that would overlap one already drawn on
+     * the same band: a crowded ring keeps its bands, but only the titles that fit are written.
+     */
+    private fun drawArcLabelsWithoutOverlap(
+        canvas: Canvas, cx: Float, cy: Float, labels: List<ArcLabel>,
+        occupied: List<Triple<Float, Double, Double>> = emptyList(),
+    ) {
+        // Radius, centre and half-width (degrees) of everything already on the ring.
+        val placed = occupied.toMutableList()
+        labels.sortedByDescending { it.weight }.forEach { label ->
+            val text = fitArcLabel(label.title, label.radius, label.maxSweepDegrees) ?: return@forEach
+            val half = Math.toDegrees((arcLabel.measureText(text) / label.radius).toDouble()) / 2.0
+            val gap = Math.toDegrees((arcLabel.textSize * .6f / label.radius).toDouble())
+            val clash = placed.any { (radius, centre, otherHalf) ->
+                kotlin.math.abs(radius - label.radius) < arcLabel.textSize * 1.15f &&
+                    angularGap(centre, label.midAngle) < half + otherHalf + gap
+            }
+            if (clash) return@forEach
+            placed += Triple(label.radius, label.midAngle, half)
+            drawArcLabel(canvas, text, cx, cy, label.radius, label.midAngle, label.maxSweepDegrees)
+        }
+    }
+
+    /** [value] ellipsized to [maxSweepDegrees] of arc at [radius], or null when too little room. */
+    private fun fitArcLabel(value: String, radius: Float, maxSweepDegrees: Double): String? {
+        val available = (radius * Math.toRadians(maxSweepDegrees)).toFloat() * .92f
+        if (available < arcLabel.textSize * 1.2f) return null
+        return TextUtils.ellipsize(value, arcLabel, available, TextUtils.TruncateAt.END).toString().takeIf { it.isNotBlank() }
     }
 
     private fun drawCalendarDayEvents(canvas: Canvas, cx: Float, cy: Float, hourR: Float) {
         val day = selectedInstant.atZone(zone).toLocalDate()
         val band = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         arcLabel.textSize = dayEventLabelSize(hourR)
+        val labels = mutableListOf<ArcLabel>()
         occurrences.filter { !it.isYearRingEvent }.forEach { event ->
             val segment = CalendarIntervals.inDay(event, day, zone) ?: return@forEach
             val eventBand = dayBand(hourR, event.calendarId)
@@ -1958,10 +2134,11 @@ class SundialView(
                 cx + eventBand.centerRadius, cy + eventBand.centerRadius)
             canvas.drawArc(arcBounds, hourAngle(segment.startMinute / 60.0).toFloat(),
                 ((if (north) -1.0 else 1.0) * minutes / 4.0).toFloat(), false, band)
-            drawArcLabel(canvas, event.title, cx, cy, eventBand.centerRadius,
+            labels += ArcLabel(event.title, eventBand.centerRadius,
                 hourAngle((segment.startMinute + segment.endMinuteExclusive) / 120.0),
-                maxOf(minutes / 4.0, MIN_DAY_LABEL_DEGREES))
+                maxOf(minutes / 4.0, MIN_DAY_LABEL_DEGREES), minutes)
         }
+        drawArcLabelsWithoutOverlap(canvas, cx, cy, labels)
     }
 
     /**
@@ -1978,10 +2155,7 @@ class SundialView(
         midAngle: Double,
         maxSweepDegrees: Double,
     ) {
-        val available = (radius * Math.toRadians(maxSweepDegrees)).toFloat() * .92f
-        if (available < arcLabel.textSize * 1.2f) return
-        val label = TextUtils.ellipsize(value, arcLabel, available, TextUtils.TruncateAt.END).toString()
-        if (label.isBlank()) return
+        val label = fitArcLabel(value, radius, maxSweepDegrees) ?: return
         // Light text with a soft dark halo reads on any calendar colour, on sky or brass.
         arcLabel.color = if (brass) Color.WHITE else instrumentColor
         arcLabel.setShadowLayer(2.5f * density, 0f, 0f, 0xD0000000.toInt())
@@ -2011,7 +2185,7 @@ class SundialView(
         ornate: Boolean,
         highlightOffsetMinutes: Int? = null,
     ) {
-        val bitmap = earthRenderer.render(selectedInstant, north, highlightOffsetMinutes)
+        val bitmap = earthRenderer.render(selectedInstant, north, highlightOffsetMinutes, brass = brass)
         val sunAngle = Math.toDegrees(atan2((sunY - y).toDouble(), (sunX - x).toDouble())).toFloat()
         // EarthSphereRenderer uses Sun-up coordinates; rotate the complete globe into the actual
         // Earth-to-Sun direction without changing its geographic orientation.
@@ -2058,7 +2232,7 @@ class SundialView(
                 floatArrayOf(0f, .42f, 1f), Shader.TileMode.CLAMP)
         }
         canvas.drawCircle(x, y, radius * 2.7f, aura)
-        val moon = moonRenderer.render((radius * 2f).toInt(), sunX - x, sunY - y)
+        val moon = moonRenderer.render((radius * 2f).toInt(), sunX - x, sunY - y, brass = brass)
         canvas.drawBitmap(moon, null, RectF(x - radius, y - radius, x + radius, y + radius), fill)
         white.color = withAlpha(instrumentColor, 184); white.strokeWidth = maxOf(1f, radius * .075f)
         canvas.drawCircle(x, y, radius * 1.04f, white)
@@ -2878,6 +3052,10 @@ class SundialView(
     companion object {
         private const val TRANSITION_DURATION_MS = 1_000L
         private const val LOCAL_TOOTH_RED = 0xFFE3262E.toInt()
+        private const val ALARM_YELLOW = 0xFFFFE45A.toInt()
+        private const val ALARM_OUTLINE = 0xFF332400.toInt()
+        /** Flight progress by which the small Earth has given way to the Earth view's globe. */
+        private const val FLIGHT_EARTH_HANDOVER = .2f
         private const val BRASS_ENAMEL_RED = 0xFF7A1E12.toInt()
         /** A common (365-day) year for the watch face's day ticks, month names and season bands. */
         private const val WATCH_FACE_YEAR = 2027

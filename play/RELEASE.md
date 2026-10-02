@@ -113,7 +113,15 @@ screenshots. Listing text is in `play/listing/en-US/`.
    The bundles are `app/build/outputs/bundle/release/app-release.aab` (phone) and
    `wear/build/outputs/bundle/release/wear-release.aab` (watch). Raise the watch versionCode with
    the phone's.
-3. Upload it to the internal testing track first, install from Play on a device, then promote
+3. Commit the release, create an annotated semantic-version tag matching `versionName`, and push
+   both. Never move a published release tag:
+
+   ```bash
+   git tag -a v3.1.0 -m "Sundial Android 3.1.0"
+   git push origin main v3.1.0
+   ```
+
+4. Upload it to the internal testing track first, install from Play on a device, then promote
    to production.
 
 Console answers for Data safety, content rating and app content are drafted in

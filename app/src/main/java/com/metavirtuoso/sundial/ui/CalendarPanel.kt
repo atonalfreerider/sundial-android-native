@@ -10,6 +10,8 @@ class CalendarPanel(context: Context) : LinearLayout(context) {
     private val controls = InstrumentControls(context)
     private val list = LinearLayout(context).apply { orientation = VERTICAL }
     private val selectedCalendarIds = linkedSetOf<Long>()
+    /** The chosen calendars survive restarts (ids only; no calendar data is stored). */
+    private val saved = context.getSharedPreferences("calendar_selection", Context.MODE_PRIVATE)
 
     var onCalendarSelectionChanged: ((Set<Long>) -> Unit)? = null
     var onAccessRequested: (() -> Unit)? = null
@@ -28,6 +30,13 @@ class CalendarPanel(context: Context) : LinearLayout(context) {
             showMessage("No synced calendars found")
             return
         }
+        // Bring back the saved choice, dropping calendars that are no longer synced.
+        val restored = saved.getStringSet(SELECTED, emptySet()).orEmpty().mapNotNull(String::toLongOrNull)
+            .filter { id -> calendars.any { it.id == id } }
+        if (selectedCalendarIds.isEmpty() && restored.isNotEmpty()) {
+            selectedCalendarIds += restored
+            onCalendarSelectionChanged?.invoke(selectedCalendarIds.toSet())
+        }
         calendars.forEach { calendar ->
             val row = controls.switch(calendar.displayName).apply {
                 isChecked = calendar.id in selectedCalendarIds
@@ -35,6 +44,7 @@ class CalendarPanel(context: Context) : LinearLayout(context) {
                 with(controls) { tint(calendar.color) }
                 setOnCheckedChangeListener { _, checked ->
                     if (checked) selectedCalendarIds += calendar.id else selectedCalendarIds -= calendar.id
+                    saved.edit().putStringSet(SELECTED, selectedCalendarIds.map(Long::toString).toSet()).apply()
                     onCalendarSelectionChanged?.invoke(selectedCalendarIds.toSet())
                 }
             }
@@ -70,4 +80,6 @@ class CalendarPanel(context: Context) : LinearLayout(context) {
             setPadding(controls.dp(2), controls.dp(12), controls.dp(2), controls.dp(14))
         })
     }
+
+    private companion object { const val SELECTED = "selected_ids" }
 }

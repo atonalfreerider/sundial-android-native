@@ -723,6 +723,7 @@ class SwiftReferenceTest {
             ZodiacProfile(true, LocalDate.of(1990, 3, 20), LocalTime.of(12, 0), null),
             ZodiacProfile(false, LocalDate.of(1999, 12, 31), LocalTime.of(12, 0, 1), null),
             ZodiacProfile(true, LocalDate.of(1985, 1, 19), LocalTime.of(18, 45), Zodiac.Sign.AQUARIUS),
+            ZodiacProfile(true, LocalDate.of(1990, 10, 23), LocalTime.of(8, 45), null, "America/Los_Angeles"),
         )
         val todays = listOf("2026-09-26", "2024-12-22", "2025-01-19", "2025-01-20", "2024-02-29").map(LocalDate::parse)
         put("ZodiacProfile", profiles.flatMap { profile ->
@@ -730,6 +731,7 @@ class SwiftReferenceTest {
                 rec(
                     "enabled" to profile.enabled, "birthDate" to profile.birthDate?.toString(),
                     "birthTime" to timeOut(profile.birthTime), "selectedSign" to profile.selectedSign?.name,
+                    "birthZoneId" to profile.birthZoneId,
                     "today" to today.toString(),
                     "output" to rec(
                         "resolvedSign" to profile.resolvedSign(today).name,
@@ -745,6 +747,7 @@ class SwiftReferenceTest {
         fun profileOut(p: ZodiacProfile) = rec(
             "enabled" to p.enabled, "birthDate" to p.birthDate?.toString(),
             "birthTime" to timeOut(p.birthTime), "selectedSign" to p.selectedSign?.name,
+            "birthZoneId" to p.birthZoneId,
         )
         val samples = profiles.take(7)
         put("ZodiacPreferences.preserveNatalData", samples.flatMap { requested ->
@@ -813,7 +816,7 @@ class SwiftReferenceTest {
         }
         val prompt = """
             Write a vivid daily horoscope as a single paragraph of 55 to 85 words.
-            Reader: ${sign.displayName} sun sign, born ${profile.birthDate} at ${profile.birthTime} local time.
+            Reader: ${sign.displayName} sun sign, born ${profile.birthDate} at ${profile.birthTime} local time (${profile.birthZone.id}).
             Date: $date. Current tropical placements: $sky.
             Style: poetic brass-orrery imagery, warm, specific, reflective, second person.
             Treat astrology as creative entertainment. Do not claim certainty, diagnose health,
@@ -833,7 +836,7 @@ class SwiftReferenceTest {
         val source = File("src/main/java/com/metavirtuoso/sundial/horoscope/HoroscopeGenerator.kt").readText()
         listOf(
             "Write a vivid daily horoscope as a single paragraph of 55 to 85 words.",
-            "Reader: \${sign.displayName} sun sign, born \${profile.birthDate} at \${profile.birthTime} local time.",
+            "Reader: \${sign.displayName} sun sign, born \${profile.birthDate} at \${profile.birthTime} local time (\${profile.birthZone.id}).",
             "Date: \$date. Current tropical placements: \$sky.",
             "Style: poetic brass-orrery imagery, warm, specific, reflective, second person.",
             "Treat astrology as creative entertainment. Do not claim certainty, diagnose health,",
@@ -862,6 +865,9 @@ class SwiftReferenceTest {
                 rec(
                     "enabled" to profile.enabled, "birthDate" to profile.birthDate?.toString(),
                     "birthTime" to timeOut(profile.birthTime), "selectedSign" to profile.selectedSign?.name,
+                    // Pin the generator machine's fallback so the Swift reference is independent
+                    // of the CI runner's own time zone.
+                    "birthZoneId" to profile.birthZone.id,
                     "instant" to ms(instant), "zone" to zoneId, "date" to date.toString(),
                     "sign" to profile.resolvedSign(date).name, "output" to horoscopePrompt(profile, instant, zone),
                 )
